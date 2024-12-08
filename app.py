@@ -21,20 +21,53 @@ from PIL import Image
 import tensorflow as tf
 import sqlite3
 
-# Configurar logging
+# Configurar logging com formato melhorado
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'  # Corrigido levelname
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Configurar TensorFlow para reduzir warnings
+tf.get_logger().setLevel('ERROR')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Configurações da aplicação
 APP_CONFIG = {
     "title": "Sistema de Reconhecimento Facial Bovino",
     "icon": "🐮",
     "db_path": os.path.join(os.path.dirname(__file__), "bovine_records.db"),
-    "db_timeout": 30
+    "db_timeout": 30,
+    "model_path": os.path.join(os.path.dirname(__file__), "models", "model.h5"),
+    "use_gpu": False  # Configuração para uso de GPU
 }
+
+@st.cache_resource
+def load_model() -> Optional[tf.keras.Model]:
+    """
+    Carrega o modelo de IA do arquivo.
+    
+    Returns:
+        Optional[tf.keras.Model]: Modelo carregado ou None se houver erro
+    """
+    try:
+        if not os.path.exists(APP_CONFIG["model_path"]):
+            st.error("Modelo não encontrado. Verifique o caminho do arquivo.")
+            logger.error(f"Arquivo do modelo não encontrado: {APP_CONFIG['model_path']}")
+            return None
+            
+        # Configurar uso de GPU/CPU
+        if not APP_CONFIG["use_gpu"]:
+            tf.config.set_visible_devices([], 'GPU')
+            
+        model = tf.keras.models.load_model(APP_CONFIG["model_path"])
+        logger.info("Modelo carregado com sucesso")
+        return model
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar modelo: {str(e)}")
+        logger.error(f"Erro ao carregar modelo: {str(e)}", exc_info=True)
+        return None
 
 # Versões e ambiente
 tf_version = tf.__version__
@@ -146,6 +179,10 @@ def preprocess_image(image):
     except Exception as e:
         st.error(f"Erro no pré-processamento da imagem: {e}")
         return None
+
+# Exibir imagens com parâmetro atualizado
+def show_image(image, caption=""):
+    st.image(image, caption=caption, use_container_width=True)
 
 def main():
     try:
