@@ -81,52 +81,84 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     return image
 
 def analyze_features(model: tf.keras.Model, processed_img: np.ndarray) -> dict:
-    """Analisa características detalhadas na imagem"""
-    # Extrair features do modelo base
-    features_model = tf.keras.Model(
-        inputs=model.input,
-        outputs=model.get_layer('global_average_pooling2d').output
-    )
-    features = features_model.predict(np.expand_dims(processed_img, axis=0), verbose=0)[0]
-    
-    # Mapear características bovinas
-    caracteristicas = {
-        'face_detectada': {
-            'confianca': float(features[0]),
-            'descricao': 'Face bovina identificada'
-        },
-        'olhos': {
-            'confianca': float(features[1]),
-            'descricao': 'Região dos olhos'
-        },
-        'focinho': {
-            'confianca': float(features[2]),
-            'descricao': 'Região do focinho'
-        },
-        'orelhas': {
-            'confianca': float(features[3]),
-            'descricao': 'Região das orelhas'
+    """Analisa características detalhadas na imagem usando as camadas intermediárias"""
+    try:
+        # Obter camada intermediária
+        feature_layer = model.layers[-2]  # Dense layer antes da saída
+        feature_model = tf.keras.Model(
+            inputs=model.layers[0].input,
+            outputs=feature_layer.output
+        )
+        
+        # Extrair features
+        features = feature_model.predict(np.expand_dims(processed_img, axis=0), verbose=0)[0]
+        
+        # Mapear características principais
+        num_features = min(4, len(features))
+        threshold_values = np.percentile(features, [25, 50, 75, 100])
+        
+        caracteristicas = {
+            'face_detectada': {
+                'confianca': float(np.mean(features > threshold_values[3])),
+                'descricao': 'Face bovina identificada'
+            },
+            'olhos': {
+                'confianca': float(np.mean(features > threshold_values[2])),
+                'descricao': 'Região dos olhos'
+            },
+            'focinho': {
+                'confianca': float(np.mean(features > threshold_values[1])),
+                'descricao': 'Região do focinho'
+            },
+            'orelhas': {
+                'confianca': float(np.mean(features > threshold_values[0])),
+                'descricao': 'Região das orelhas'
+            }
         }
-    }
-    
-    return caracteristicas
+        
+        return caracteristicas
+        
+    except Exception as e:
+        logger.error(f"Erro na análise de características: {str(e)}")
+        return {
+            'erro': {
+                'confianca': 0.0,
+                'descricao': f'Erro na análise: {str(e)}'
+            }
+        }
 
 def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarray, processed_img: np.ndarray) -> dict:
     """Análise detalhada da detecção com características"""
-    # Análise básica
-    analysis = {
-        'score': float(prediction),
-        'confianca': f"{float(prediction):.2%}",
-        'status': 'Positivo' if prediction > 0.5 else 'Negativo',
-        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'dimensoes': image.shape,
-        'qualidade': 'Alta' if min(image.shape[:2]) >= 224 else 'Média'
-    }
-    
-    # Adicionar análise de características
-    analysis['caracteristicas'] = analyze_features(model, processed_img)
-    
-    return analysis
+    try:
+        analysis = {
+            'score': float(prediction),
+            'confianca': f"{float(prediction):.2%}",
+            'status': 'Positivo' if prediction > 0.5 else 'Negativo',
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'dimensoes': image.shape,
+            'qualidade': 'Alta' if min(image.shape[:2]) >= 224 else 'Média'
+        }
+        
+        # Adicionar análise de características com tratamento de erro
+        try:
+            analysis['caracteristicas'] = analyze_features(model, processed_img)
+        except Exception as e:
+            logger.error(f"Erro ao analisar características: {str(e)}")
+            analysis['caracteristicas'] = {
+                'erro': {
+                    'confianca': 0.0,
+                    'descricao': 'Falha na análise de características'
+                }
+            }
+        
+        return analysis
+        
+    except Exception as e:
+        logger.error(f"Erro na análise de detecção: {str(e)}")
+        return {
+            'erro': str(e),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
 
 def show_detection_report(analysis: dict):
     """Exibe relatório detalhado da detecção"""
