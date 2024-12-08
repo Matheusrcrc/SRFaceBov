@@ -1,13 +1,21 @@
 import streamlit as st
+
+# Primeira chamada ao Streamlit deve ser set_page_config
+st.set_page_config(
+    page_title="Sistema de Reconhecimento Facial Bovino",
+    page_icon="🐮",
+    layout="wide"
+)
+
+# Imports restantes
 import cv2
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-import io
 import sqlite3
 from datetime import datetime
 import os
-import platform  # Adicione este import no topo do arquivo
+import platform
 import logging
 from typing import Optional
 
@@ -27,11 +35,6 @@ APP_CONFIG = {
 
 # Verificar versão do TensorFlow e compatibilidade
 tf_version = tf.__version__
-st.set_page_config(
-    page_title=APP_CONFIG["title"],
-    page_icon=APP_CONFIG["icon"],
-    layout="wide"
-)
 
 # Mostrar informações de versão
 st.sidebar.info(f"TensorFlow version: {tf_version}")
@@ -92,55 +95,6 @@ def load_model():
         return model
     except tf.errors.NotFoundError:
         st.error("Erro: Arquivo do modelo não encontrado")
-        return None
-    except Exception as e:
-        st.error(f"Erro ao carregar o modelo: {e}")
-        return None
-import streamlit as st
-import cv2
-import numpy as np
-from PIL import Image
-import tensorflow as tf
-import io
-import sqlite3
-from datetime import datetime
-import os
-
-# Configurações iniciais do Streamlit
-st.set_page_config(
-    page_title="Sistema de Reconhecimento Facial Bovino",
-    page_icon="🐮",
-    layout="wide"
-)
-
-# Verificar versão do TensorFlow
-print(f"TensorFlow version: {tf.__version__}")
-
-# Initialize database with error handling
-def init_db():
-    try:
-        conn = sqlite3.connect('bovine_records.db', timeout=30)
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS records
-            (id INTEGER PRIMARY KEY AUTOINCREMENT,
-             image_path TEXT,
-             bovine_id TEXT,
-             confidence REAL,
-             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)
-        ''')
-        conn.commit()
-        return conn
-    except sqlite3.Error as e:
-        st.error(f"Erro ao conectar ao banco de dados: {e}")
-        return None
-
-# Model loading function with error handling
-@st.cache_resource(show_spinner=True)
-def load_model():
-    try:
-        # Placeholder for actual model loading
-        # model = tf.keras.models.load_model('path_to_model')
         return None
     except Exception as e:
         st.error(f"Erro ao carregar o modelo: {e}")
