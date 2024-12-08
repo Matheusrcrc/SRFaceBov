@@ -44,6 +44,32 @@ APP_CONFIG = {
     "use_gpu": False
 }
 
+# Adicionar após APP_CONFIG
+def get_db():
+    """Retorna conexão com banco de dados"""
+    try:
+        conn = sqlite3.connect(APP_CONFIG["db_path"], timeout=APP_CONFIG["db_timeout"])
+        c = conn.cursor()
+        
+        # Criar tabela se não existir
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS bovinos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT UNIQUE,
+                nome TEXT,
+                caracteristicas TEXT,
+                confianca REAL,
+                primeira_deteccao DATETIME,
+                ultima_deteccao DATETIME,
+                total_deteccoes INTEGER DEFAULT 1
+            )
+        ''')
+        conn.commit()
+        return conn
+    except sqlite3.Error as e:
+        logger.error(f"Erro banco de dados: {e}")
+        return None
+
 # Adicionar após as configurações
 def init_db():
     """Inicializa banco de dados SQLite"""
@@ -66,22 +92,32 @@ def init_db():
 
 def find_similar_bovino(caracteristicas: dict, threshold: float = 0.85) -> Optional[dict]:
     """Busca bovino similar no banco"""
-    conn = sqlite3.connect(APP_CONFIG["db_path"])
-    c = conn.cursor()
-    c.execute("SELECT * FROM bovinos")
-    bovinos = c.fetchall()
-    
-    for bovino in bovinos:
-        stored_caract = eval(bovino[3])  # Características armazenadas
-        similarity = calculate_similarity(caracteristicas, stored_caract)
-        if similarity >= threshold:
-            return {
-                'id': bovino[0],
-                'codigo': bovino[1],
-                'nome': bovino[2],
-                'similarity': similarity
-            }
-    return None
+    try:
+        conn = get_db()
+        if not conn:
+            return None
+            
+        c = conn.cursor()
+        c.execute("SELECT * FROM bovinos")
+        bovinos = c.fetchall()
+        
+        for bovino in bovinos:
+            stored_caract = eval(bovino[3])
+            similarity = calculate_similarity(caracteristicas, stored_caract)
+            if similarity >= threshold:
+                return {
+                    'id': bovino[0],
+                    'codigo': bovino[1],
+                    'nome': bovino[2],
+                    'similarity': similarity
+                }
+        return None
+    except Exception as e:
+        logger.error(f"Erro ao buscar bovino: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
 
 def calculate_similarity(caract1: dict, caract2: dict) -> float:
     """Calcula similaridade entre características"""
@@ -95,39 +131,66 @@ def calculate_similarity(caract1: dict, caract2: dict) -> float:
     except:
         return 0.0
 
-def register_new_bovino(caracteristicas: dict) -> dict:
-    """Registra novo bovino no banco"""
-    codigo = st.text_input("Código do Bovino:")
-    nome = st.text_input("Nome do Bovino:")
-    
-    if st.button("Registrar Bovino"):
-        conn = sqlite3.connect(APP_CONFIG["db_path"])
-        c = conn.cursor()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def register_new_bovino(caracteristicas: dict) -> Optional[dict]:
+    """Registra novo bovino"""
+    try:
+        conn = get_db()
+        if not conn:
+            return None
+            
+        codigo = st.text_input("Código do Bovino:")
+        nome = st.text_input("Nome do Bovino:")
         
+        if st.button("Registrar") and codigo and nome:
+            c = conn.cursor()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            c.execute("""
+                INSERT INTO bovinos 
+                (codigo, nome, caracteristicas, confianca, primeira_deteccao, ultima_deteccao)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                codigo, 
+                nome, 
+                str(caracteristicas),
+                max(v['confianca'] for v in caracteristicas.values()),
+                now,
+                now
+            ))
+            
+            conn.commit()
+            return {'codigo': codigo, 'nome': nome}
+    except Exception as e:
+        logger.error(f"Erro ao registrar bovino: {e}")
+        st.error(f"Erro ao registrar: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def update_bovino_detection(bovino_id: int) -> bool:
+    """Atualiza contagem de detecções"""
+    try:
+        conn = get_db()
+        if not conn:
+            return False
+            
+        c = conn.cursor()
         c.execute("""
-            INSERT INTO bovinos (codigo, nome, caracteristicas, confianca, 
-                               primeira_deteccao, ultima_deteccao)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (codigo, nome, str(caracteristicas), 
-              max(v['confianca'] for v in caracteristicas.values()),
-              now, now))
+            UPDATE bovinos 
+            SET total_deteccoes = total_deteccoes + 1,
+                ultima_deteccao = ?
+            WHERE id = ?
+        """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), bovino_id))
         
         conn.commit()
-        return {'codigo': codigo, 'nome': nome}
-    return None
-
-def update_bovino_detection(bovino_id: int):
-    """Atualiza contagem de detecções"""
-    conn = sqlite3.connect(APP_CONFIG["db_path"])
-    c = conn.cursor()
-    c.execute("""
-        UPDATE bovinos 
-        SET total_deteccoes = total_deteccoes + 1,
-            ultima_deteccao = ?
-        WHERE id = ?
-    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), bovino_id))
-    conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao atualizar detecção: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 @st.cache_resource
 def load_model() -> Optional[Any]:
@@ -203,7 +266,7 @@ def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarra
             'score': float(prediction),
             'confianca': f"{float(prediction):.2%}",
             'status': 'Positivo' if prediction > 0.5 else 'Negativo',
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%:%S"),
             'dimensoes': image.shape,
             'qualidade': 'Alta' if min(image.shape[:2]) >= 224 else 'Média',
             'caracteristicas': analyze_features(model, processed_img)
