@@ -1,4 +1,67 @@
+import streamlit as st
+import cv2
+import numpy as np
+from PIL import Image
+import tensorflow as tf
+import io
+import sqlite3
+from datetime import datetime
+import os
 
+# Verificar versão do TensorFlow e compatibilidade
+tf_version = tf.__version__
+st.set_page_config(
+    page_title="Sistema de Reconhecimento Facial Bovino",
+    page_icon="🐮",
+    layout="wide"
+)
+
+# Mostrar informações de versão
+st.sidebar.info(f"TensorFlow version: {tf_version}")
+st.sidebar.info(f"Python version: {platform.python_version()}")
+
+# Initialize database with improved error handling
+def init_db():
+    try:
+        db_path = 'bovine_records.db'
+        conn = sqlite3.connect(db_path, timeout=30)
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS records
+            (id INTEGER PRIMARY KEY AUTOINCREMENT,
+             image_path TEXT,
+             bovine_id TEXT,
+             confidence REAL,
+             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)
+        ''')
+        conn.commit()
+        return conn
+    except sqlite3.Error as e:
+        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        return None
+    except Exception as e:
+        st.error(f"Erro inesperado: {e}")
+        return None
+
+# Model loading function with improved error handling
+@st.cache_resource(show_spinner=True)
+def load_model():
+    try:
+        # Placeholder for actual model loading
+        # Adicione aqui o caminho correto do seu modelo
+        model_path = os.path.join(os.path.dirname(__file__), 'models', 'model.h5')
+        if not os.path.exists(model_path):
+            st.error("Modelo não encontrado. Verifique o caminho do arquivo.")
+            return None
+            
+        model = tf.keras.models.load_model(model_path)
+        return model
+    except tf.errors.NotFoundError:
+        st.error("Erro: Arquivo do modelo não encontrado")
+        return None
+    except Exception as e:
+        st.error(f"Erro ao carregar o modelo: {e}")
+        return None
 import streamlit as st
 import cv2
 import numpy as np
