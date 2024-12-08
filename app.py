@@ -14,8 +14,15 @@ import logging
 from datetime import datetime
 from typing import Optional, Any
 
+# Importações com tratamento de erro
+try:
+    import cv2
+except ImportError:
+    print("Erro ao importar cv2, tentando opencv-python-headless...")
+    os.system('pip install opencv-python-headless')
+    import cv2
+
 # Third-party imports
-import cv2
 import numpy as np
 from PIL import Image
 import tensorflow as tf
@@ -30,7 +37,7 @@ import torch
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(mensagem)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Corrigido de 'mensagem' para 'message'
 )
 logger = logging.getLogger(__name__)
 
@@ -200,7 +207,7 @@ def load_model(model_path: str) -> Optional[Any]:
     """Carrega modelo YOLO para detecção"""
     try:
         model = YOLO(model_path)
-        logger.info("Modelo YOLO carregado com sucesso")
+        logger.info("Modelo YOLO carregado com sucesso")  # Esta linha agora funcionará corretamente
         return model
     except Exception as e:
         logger.error(f"Erro ao carregar modelo YOLO: {e}")

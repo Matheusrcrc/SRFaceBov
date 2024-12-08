@@ -1,4 +1,3 @@
-
 import cv2
 import numpy as np
 from PIL import Image
@@ -9,7 +8,7 @@ from datetime import datetime
 def setup_logging(name='utils'):
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Garante formato correto
         handlers=[
             logging.FileHandler(f'{name}.log'),
             logging.StreamHandler()
