@@ -8,12 +8,28 @@ import sqlite3
 from datetime import datetime
 import os
 import platform  # Adicione este import no topo do arquivo
+import logging
+from typing import Optional
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Configurações da aplicação
+APP_CONFIG = {
+    "title": "Sistema de Reconhecimento Facial Bovino",
+    "icon": "🐮",
+    "db_path": "bovine_records.db",
+    "db_timeout": 30
+}
 
 # Verificar versão do TensorFlow e compatibilidade
 tf_version = tf.__version__
 st.set_page_config(
-    page_title="Sistema de Reconhecimento Facial Bovino",
-    page_icon="🐮",
+    page_title=APP_CONFIG["title"],
+    page_icon=APP_CONFIG["icon"],
     layout="wide"
 )
 
@@ -22,25 +38,42 @@ st.sidebar.info(f"TensorFlow version: {tf_version}")
 st.sidebar.info(f"Python version: {platform.python_version()}")
 
 # Initialize database with improved error handling
-def init_db():
+def init_db() -> Optional[sqlite3.Connection]:
+    """
+    Inicializa a conexão com o banco de dados SQLite.
+    
+    Returns:
+        Optional[sqlite3.Connection]: Objeto de conexão ou None se houver erro
+    """
     try:
-        db_path = 'bovine_records.db'
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = sqlite3.connect(
+            APP_CONFIG["db_path"], 
+            timeout=APP_CONFIG["db_timeout"]
+        )
         c = conn.cursor()
+        
+        # Criar tabela se não existir
         c.execute('''
-            CREATE TABLE IF NOT EXISTS records
-            (id INTEGER PRIMARY KEY AUTOINCREMENT,
-             image_path TEXT,
-             bovine_id TEXT,
-             confidence REAL,
-             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)
+            CREATE TABLE IF NOT EXISTS records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_path TEXT NOT NULL,
+                bovine_id TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(image_path, bovine_id)
+            )
         ''')
         conn.commit()
+        logging.info("Banco de dados inicializado com sucesso")
         return conn
+        
     except sqlite3.Error as e:
+        logging.error(f"Erro SQLite: {e}")
         st.error(f"Erro ao conectar ao banco de dados: {e}")
         return None
+        
     except Exception as e:
+        logging.error(f"Erro inesperado: {e}")
         st.error(f"Erro inesperado: {e}")
         return None
 
