@@ -49,7 +49,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 APP_CONFIG = {
     "title": "Sistema de Reconhecimento Facial Bovino",
     "icon": "🐮",
-    "db_path": ":memory:",
+    "db_path": "bovinos.db",  # Alterado para arquivo físico
     "db_timeout": 30,
     "image_size": (224, 224),
     "use_gpu": False,
@@ -58,7 +58,6 @@ APP_CONFIG = {
     "available_models": ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt", "yolov8x.pt"],
 }
 
-# Adicionar após APP_CONFIG
 def get_db():
     """Retorna conexão com banco de dados"""
     try:
@@ -87,22 +86,41 @@ def get_db():
 # Adicionar após as configurações
 def init_db():
     """Inicializa banco de dados SQLite"""
-    conn = sqlite3.connect(APP_CONFIG["db_path"])
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS bovinos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo TEXT UNIQUE,
-            nome TEXT,
-            caracteristicas TEXT,
-            confianca REAL,
-            primeira_deteccao DATETIME,
-            ultima_deteccao DATETIME,
-            total_deteccoes INTEGER DEFAULT 1
-        )
-    ''')
-    conn.commit()
-    return conn
+    try:
+        conn = sqlite3.connect(APP_CONFIG["db_path"])
+        c = conn.cursor()
+        
+        # Tabela principal
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS bovinos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT UNIQUE,
+                nome TEXT,
+                caracteristicas TEXT,
+                confianca REAL,
+                primeira_deteccao DATETIME,
+                ultima_deteccao DATETIME,
+                total_deteccoes INTEGER DEFAULT 1
+            )
+        ''')
+        
+        # Tabela de histórico
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS historico_deteccoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bovino_id INTEGER,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                confianca REAL,
+                detalhes TEXT,
+                FOREIGN KEY (bovino_id) REFERENCES bovinos (id)
+            )
+        ''')
+        
+        conn.commit()
+        return conn
+    except Exception as e:
+        logger.error(f"Erro ao inicializar banco: {e}")
+        return None
 
 def find_similar_bovino(caracteristicas: dict, threshold: float = 0.85) -> Optional[dict]:
     """Busca bovino similar no banco"""
@@ -406,50 +424,90 @@ def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
 
 def show_detection_report(analysis: dict, image_np: np.ndarray):
     """Exibe relatório com identificação do bovino"""
-    if 'caracteristicas' in analysis:
-        # Buscar bovino similar
-        similar = find_similar_bovino(analysis['caracteristicas'])
-        
-        if similar:
-            # Bovino conhecido
-            st.success(f"Bovino Reconhecido!")
-            st.write(f"Código: {similar['codigo']}")
-            st.write(f"Nome: {similar['nome']}")
-            st.write(f"Similaridade: {similar['similarity']:.2%}")
-            
-            # Atualizar registros
-            update_bovino_detection(similar['id'])
-            
-        else:
-            # Novo bovino detectado
-            st.warning("Novo bovino detectado!")
-            
-            # Formulário para registro
-            with st.form("registro_bovino"):
-                codigo = st.text_input("Digite o código do bovino:")
-                nome = st.text_input("Digite o nome do bovino:")
-                submit = st.form_submit_button("Registrar Bovino")
-                
-                if submit and codigo and nome:
-                    if novo_bovino := register_new_bovino(analysis['caracteristicas'], codigo, nome):
-                        st.success(f"Bovino {novo_bovino['nome']} registrado com sucesso!")
-                    else:
-                        st.error("Erro ao registrar bovino")
+    if 'caracteristicas' not in analysis:
+        st.error("Nenhuma característica detectada na imagem")
+        return
+
+    # Buscar bovino similar
+    similar = find_similar_bovino(analysis['caracteristicas'])
     
-    # Continuar com o relatório normal...
     col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("Score de Detecção", analysis['confianca'])
-        st.metric("Status", analysis['status'])
-        
+        if similar:
+            # Bovino conhecido
+            st.success("🐮 Bovino Reconhecido!")
+            st.write(f"**Código:** {similar['codigo']}")
+            st.write(f"**Nome:** {similar['nome']}")
+            st.write(f"**Similaridade:** {similar['similarity']:.2%}")
+            
+            # Atualizar registros
+            if update_bovino_detection(similar['id']):
+                st.info("✅ Registro atualizado com sucesso!")
+                
+                # Mostrar histórico
+                show_bovino_history(similar['id'])
+        else:
+            st.warning("⚠️ Novo bovino detectado!")
+            
+            # Formulário para registro
+            with st.form("registro_bovino", clear_on_submit=True):
+                codigo = st.text_input("Código do bovino:")
+                nome = st.text_input("Nome do bovino:")
+                submit = st.form_submit_button("Registrar Bovino")
+                
+                if submit and codigo and nome:
+                    novo_bovino = register_new_bovino(
+                        analysis['caracteristicas'],
+                        codigo,
+                        nome
+                    )
+                    if novo_bovino:
+                        st.success(f"✅ Bovino {novo_bovino['nome']} registrado!")
+                    else:
+                        st.error("❌ Erro ao registrar bovino")
+    
     with col2:
+        # Métricas da detecção
+        st.metric("Score", analysis['confianca'])
+        st.metric("Status", analysis['status'])
         st.metric("Qualidade", analysis['qualidade'])
-        st.metric("Dimensões", f"{analysis['dimensoes'][0]}x{analysis['dimensoes'][1]}")
 
     # Mostrar imagem processada
     if 'imagem_processada' in analysis:
-        st.image(analysis['imagem_processada'], caption="Detecções", use_container_width=True)
+        st.image(
+            analysis['imagem_processada'], 
+            caption="Detecções",
+            use_container_width=True
+        )
+
+def show_bovino_history(bovino_id: int):
+    """Mostra histórico de detecções do bovino"""
+    try:
+        conn = get_db()
+        if not conn:
+            return
+            
+        df = pd.read_sql_query('''
+            SELECT 
+                h.timestamp,
+                h.confianca,
+                h.detalhes
+            FROM historico_deteccoes h
+            WHERE h.bovino_id = ?
+            ORDER BY h.timestamp DESC
+            LIMIT 10
+        ''', conn, params=(bovino_id,))
+        
+        if not df.empty:
+            st.write("### Histórico de Detecções")
+            st.dataframe(df)
+        
+    except Exception as e:
+        logger.error(f"Erro ao mostrar histórico: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def main():
     st.title(APP_CONFIG["title"])
@@ -533,6 +591,12 @@ def main():
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
+
+    # Inicializar banco de dados
+    if not os.path.exists(APP_CONFIG["db_path"]):
+        init_db()
+    
+    # ...rest of main() function...
 
 if __name__ == "__main__":
     main()
