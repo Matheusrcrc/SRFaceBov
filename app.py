@@ -1,22 +1,30 @@
-# Core imports primeiro
+import streamlit as st
+
+# Configuração do Streamlit deve ser a primeira chamada
+st.set_page_config(
+    page_title="Sistema de Reconhecimento Facial Bovino",
+    page_icon="🐮",
+    layout="wide"
+)
+
+# Core imports
 import os
 import platform
 import logging
 from datetime import datetime
 from typing import Optional
 
-# Third-party imports em segundo
-import streamlit as st
+# Third-party imports
 import cv2
 import numpy as np
 from PIL import Image
 import tensorflow as tf
 import sqlite3
 
-# Configurar logging antes de tudo
+# Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levellevelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -28,18 +36,11 @@ APP_CONFIG = {
     "db_timeout": 30
 }
 
-# Configuração Streamlit
-st.set_page_config(
-    page_title=APP_CONFIG["title"],
-    page_icon=APP_CONFIG["icon"],
-    layout="wide"
-)
-
-# Verificar ambiente
+# Versões e ambiente
 tf_version = tf.__version__
 python_version = platform.python_version()
 
-# Informações no sidebar
+# Interface - Sidebar
 with st.sidebar:
     st.info(f"TensorFlow version: {tf_version}")
     st.info(f"Python version: {python_version}")
