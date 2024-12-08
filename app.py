@@ -221,11 +221,11 @@ def update_bovino_detection(bovino_id: int) -> bool:
             conn.close()
 
 @st.cache_resource
-def load_model(model_path: str) -> Optional[Any]:
+def load_model() -> Optional[YOLO]:
     """Carrega modelo YOLO para detecção"""
     try:
-        model = YOLO(model_path)
-        logger.info("Modelo YOLO carregado com sucesso")  # Esta linha agora funcionará corretamente
+        model = YOLO("yolov8n.pt")  # Carrega modelo padrão
+        logger.info("Modelo YOLO carregado com sucesso")
         return model
     except Exception as e:
         logger.error(f"Erro ao carregar modelo YOLO: {e}")
@@ -237,23 +237,29 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     image = image / 255.0
     return image
 
-def process_image(image: np.ndarray, model: Any) -> dict:
+def process_image(image: np.ndarray, model: YOLO) -> dict:
     """Processa imagem com YOLO"""
     try:
-        # Configurar parâmetros YOLO
-        results = model(image, conf=0.25, verbose=False)
+        # Configurar parâmetros YOLO e fazer predição
+        results = model.predict(
+            source=image,
+            conf=0.25,
+            verbose=False,
+            show=False
+        )
         
         # Processar resultados
         detections = []
-        for result in results[0].boxes.data.tolist():
-            x1, y1, x2, y2, conf, cls = result
-            detection = {
-                'bbox': [float(x1), float(y1), float(x2), float(y2)],
-                'confianca': float(conf),
-                'classe': results[0].names[int(cls)]
-            }
-            detections.append(detection)
-        
+        if len(results) > 0 and hasattr(results[0], 'boxes'):
+            for box in results[0].boxes:
+                box_data = box.data[0]
+                detection = {
+                    'bbox': box_data[:4].tolist(),
+                    'confianca': float(box_data[4]),
+                    'classe': results[0].names[int(box_data[5])]
+                }
+                detections.append(detection)
+
         # Preparar análise
         analysis = {
             'score': max([d['confianca'] for d in detections], default=0.0),
@@ -272,7 +278,8 @@ def process_image(image: np.ndarray, model: Any) -> dict:
         }
         
         # Adicionar imagem processada
-        analysis['imagem_processada'] = results[0].plot()
+        if len(results) > 0:
+            analysis['imagem_processada'] = results[0].plot()
         
         return analysis
         
