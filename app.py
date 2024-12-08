@@ -154,98 +154,100 @@ def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarra
 
 def draw_detections(image: np.ndarray, caracteristicas: dict) -> np.ndarray:
     """Desenha marcações precisas de detecção na imagem"""
-    img = image.copy()
-    height, width = img.shape[:2]
-    
-    # Configurações visuais
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = min(width, height) / 1000  # Escala adaptativa
-    thickness = max(1, int(min(width, height) / 500))
-    
-    # Definição das regiões de interesse (ROIs)
-    rois = {
-        'face_detectada': {
-            'region': (
-                int(width*0.25), int(height*0.15),  # x1, y1
-                int(width*0.75), int(height*0.85)   # x2, y2
-            ),
-            'color': (0, 255, 0),
-            'offset': (-10, -10)
-        },
-        'olhos': {
-            'region': (
-                int(width*0.35), int(height*0.25),
-                int(width*0.65), int(height*0.35)
-            ),
-            'color': (255, 0, 0),
-            'offset': (0, -20)
-        },
-        'focinho': {
-            'region': (
-                int(width*0.45), int(height*0.45),
-                int(width*0.55), int(height*0.60)
-            ),
-            'color': (0, 0, 255),
-            'offset': (10, -10)
-        },
-        'orelhas': {
-            'region': (
-                int(width*0.30), int(height*0.15),
-                int(width*0.70), int(height*0.25)
-            ),
-            'color': (255, 255, 0),
-            'offset': (0, -15)
+    try:
+        # Garantir que a imagem está no formato correto
+        img = image.copy()
+        if len(img.shape) == 2:  # Se for grayscale
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.shape[2] == 4:  # Se tiver canal alpha
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+            
+        height, width = img.shape[:2]
+        
+        # Configurações visuais
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = min(width, height) / 1000
+        thickness = max(1, int(min(width, height) / 500))
+        
+        # Definição das ROIs
+        rois = {
+            'face_detectada': {
+                'region': [
+                    int(width*0.25), int(height*0.15),
+                    int(width*0.75), int(height*0.85)
+                ],
+                'color': (0, 255, 0),
+                'label_pos': 'top'
+            },
+            'olhos': {
+                'region': [
+                    int(width*0.35), int(height*0.25),
+                    int(width*0.65), int(height*0.35)
+                ],
+                'color': (255, 0, 0),
+                'label_pos': 'top'
+            },
+            'focinho': {
+                'region': [
+                    int(width*0.45), int(height*0.45),
+                    int(width*0.55), int(height*0.60)
+                ],
+                'color': (0, 0, 255),
+                'label_pos': 'bottom'
+            },
+            'orelhas': {
+                'region': [
+                    int(width*0.30), int(height*0.15),
+                    int(width*0.70), int(height*0.25)
+                ],
+                'color': (255, 255, 0),
+                'label_pos': 'top'
+            }
         }
-    }
-    
-    # Desenhar detecções
-    for feature, data in caracteristicas.items():
-        if feature not in rois or 'confianca' not in data:
-            continue
-            
-        conf = data['confianca']
-        if conf > 0.3:  # Threshold mínimo
-            roi = rois[feature]
-            color = roi['color']
-            x1, y1, x2, y2 = roi['region']
-            
-            # Desenhar retângulo com transparência
-            overlay = img.copy()
-            cv2.rectangle(overlay, (x1, y1), (x2, y2), color, thickness)
-            alpha = 0.4
-            cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
-            
-            # Preparar texto do rótulo
-            label = f"{feature.replace('_', ' ').title()}: {conf:.1%}"
-            
-            # Calcular posição do texto
-            text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
-            text_x = x1 + roi['offset'][0]
-            text_y = y1 + roi['offset'][1]
-            
-            # Garantir que o texto fique dentro da imagem
-            text_x = max(text_size[0]//2, min(text_x, width-text_size[0]//2))
-            text_y = max(text_size[1], min(text_y, height-5))
-            
-            # Desenhar fundo do texto para melhor legibilidade
-            text_bg_pts = np.array([
-                [text_x, text_y-text_size[1]-5],
-                [text_x+text_size[0], text_y-text_size[1]-5],
-                [text_x+text_size[0], text_y+5],
-                [text_x, text_y+5]
-            ], np.int32)
-            
-            cv2.fillPoly(img, [text_bg_pts], (0, 0, 0))
-            cv2.putText(img, label, (text_x, text_y), 
-                       font, font_scale, color, thickness)
-            
-            # Desenhar linha conectora
-            cv2.line(img, 
-                    (x1 + (x2-x1)//2, y1),
-                    (text_x + text_size[0]//2, text_y),
-                    color, thickness//2)
-    
-    return img
+        
+        for feature, data in caracteristicas.items():
+            if feature not in rois or 'confianca' not in data:
+                continue
+                
+            conf = data['confianca']
+            if conf > 0.3:
+                roi = rois[feature]
+                color = roi['color']
+                x1, y1, x2, y2 = roi['region']
+                
+                # Desenhar retângulo
+                cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+                
+                # Preparar texto
+                label = f"{feature.replace('_', ' ').title()}: {conf:.1%}"
+                text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+                
+                # Posicionar texto
+                if roi['label_pos'] == 'top':
+                    text_y = max(text_size[1] + 10, y1 - 5)
+                else:
+                    text_y = min(height - 10, y2 + text_size[1] + 5)
+                    
+                text_x = x1 + (x2 - x1 - text_size[0]) // 2
+                text_x = max(5, min(text_x, width - text_size[0] - 5))
+                
+                # Desenhar fundo do texto
+                cv2.rectangle(img,
+                            (text_x - 2, text_y - text_size[1] - 2),
+                            (text_x + text_size[0] + 2, text_y + 2),
+                            (0, 0, 0),
+                            -1)
+                
+                # Desenhar texto
+                cv2.putText(img, label,
+                          (text_x, text_y),
+                          font, font_scale, color, thickness)
+        
+        return img
+        
+    except Exception as e:
+        logger.error(f"Erro ao desenhar detecções: {str(e)}")
+        return image  # Retorna imagem original em caso de erro
 
 def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
     """Cria thumbnail da imagem em base64"""
