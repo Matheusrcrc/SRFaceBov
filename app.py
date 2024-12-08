@@ -7,6 +7,7 @@ import io
 import sqlite3
 from datetime import datetime
 import os
+import platform  # Adicione este import no topo do arquivo
 
 # Verificar versão do TensorFlow e compatibilidade
 tf_version = tf.__version__
