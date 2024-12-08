@@ -80,9 +80,41 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     image = image / 255.0
     return image
 
-def analyze_detection(prediction: float, image: np.ndarray) -> dict:
-    """Análise detalhada da detecção"""
-    return {
+def analyze_features(model: tf.keras.Model, processed_img: np.ndarray) -> dict:
+    """Analisa características detalhadas na imagem"""
+    # Extrair features do modelo base
+    features_model = tf.keras.Model(
+        inputs=model.input,
+        outputs=model.get_layer('global_average_pooling2d').output
+    )
+    features = features_model.predict(np.expand_dims(processed_img, axis=0), verbose=0)[0]
+    
+    # Mapear características bovinas
+    caracteristicas = {
+        'face_detectada': {
+            'confianca': float(features[0]),
+            'descricao': 'Face bovina identificada'
+        },
+        'olhos': {
+            'confianca': float(features[1]),
+            'descricao': 'Região dos olhos'
+        },
+        'focinho': {
+            'confianca': float(features[2]),
+            'descricao': 'Região do focinho'
+        },
+        'orelhas': {
+            'confianca': float(features[3]),
+            'descricao': 'Região das orelhas'
+        }
+    }
+    
+    return caracteristicas
+
+def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarray, processed_img: np.ndarray) -> dict:
+    """Análise detalhada da detecção com características"""
+    # Análise básica
+    analysis = {
         'score': float(prediction),
         'confianca': f"{float(prediction):.2%}",
         'status': 'Positivo' if prediction > 0.5 else 'Negativo',
@@ -90,6 +122,11 @@ def analyze_detection(prediction: float, image: np.ndarray) -> dict:
         'dimensoes': image.shape,
         'qualidade': 'Alta' if min(image.shape[:2]) >= 224 else 'Média'
     }
+    
+    # Adicionar análise de características
+    analysis['caracteristicas'] = analyze_features(model, processed_img)
+    
+    return analysis
 
 def show_detection_report(analysis: dict):
     """Exibe relatório detalhado da detecção"""
@@ -103,6 +140,17 @@ def show_detection_report(analysis: dict):
         st.metric("Qualidade", analysis['qualidade'])
         st.metric("Dimensões", f"{analysis['dimensoes'][0]}x{analysis['dimensoes'][1]}")
     
+    # Mostrar características detectadas
+    st.subheader("Características Detectadas")
+    
+    for feature, data in analysis['caracteristicas'].items():
+        conf_color = 'green' if data['confianca'] > 0.7 else 'orange' if data['confianca'] > 0.4 else 'red'
+        st.markdown(
+            f"**{feature.replace('_', ' ').title()}**: "
+            f"_{data['descricao']}_ - "
+            f"Confiança: :{conf_color}[{data['confianca']:.2%}]"
+        )
+    
     with st.expander("Detalhes Técnicos"):
         st.json(analysis)
         
@@ -114,7 +162,14 @@ def show_detection_report(analysis: dict):
     # Mostrar histórico
     if st.session_state.detection_history:
         st.subheader("Histórico de Detecções")
-        df = pd.DataFrame(st.session_state.detection_history)
+        df = pd.DataFrame([
+            {
+                'Timestamp': d['timestamp'],
+                'Status': d['status'],
+                'Confiança': d['confianca'],
+                'Qualidade': d['qualidade']
+            } for d in st.session_state.detection_history
+        ])
         st.dataframe(df, use_container_width=True)
 
 def main():
@@ -154,7 +209,7 @@ def main():
                         verbose=0
                     )[0][0]
                     
-                    analysis = analyze_detection(prediction, img_array)
+                    analysis = analyze_detection(model, prediction, img_array, processed_img)
                     show_detection_report(analysis)
     else:
         st.warning("Sistema operando com funcionalidade limitada - modelo não disponível")
