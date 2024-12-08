@@ -12,7 +12,7 @@ import os
 import platform
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 # Third-party imports
 import cv2
@@ -21,11 +21,12 @@ from PIL import Image
 import tensorflow as tf
 import sqlite3
 import pandas as pd
+from ultralytics import YOLO  # Importação do YOLO
 
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(mensagem)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,9 @@ APP_CONFIG = {
 }
 
 @st.cache_resource
-def load_model() -> Optional[YOLO]:
+def load_model() -> Optional[Any]:
     """Carrega modelo YOLO para detecção"""
     try:
-        from ultralytics import YOLO
         model = YOLO('yolov8n.pt')
         logger.info("Modelo YOLO carregado com sucesso")
         return model
