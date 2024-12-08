@@ -61,23 +61,23 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     image = image / 255.0
     return image
 
-def process_image(image: np.ndarray, model: YOLO) -> dict:
-    """Processa imagem com YOLO e retorna análise"""
+def process_image(image: np.ndarray, model: Any) -> dict:
+    """Processa imagem com YOLO"""
     try:
-        # Fazer predição
-        results = model(image)[0]
+        # Configurar parâmetros YOLO
+        results = model(image, conf=0.25, verbose=False)
         
-        # Extrair detecções
+        # Processar resultados
         detections = []
-        for r in results.boxes.data.tolist():
-            x1, y1, x2, y2, conf, cls = r
+        for result in results[0].boxes.data.tolist():
+            x1, y1, x2, y2, conf, cls = result
             detection = {
                 'bbox': [float(x1), float(y1), float(x2), float(y2)],
                 'confianca': float(conf),
-                'classe': results.names[int(cls)]
+                'classe': results[0].names[int(cls)]
             }
             detections.append(detection)
-            
+        
         # Preparar análise
         analysis = {
             'score': max([d['confianca'] for d in detections], default=0.0),
@@ -95,9 +95,8 @@ def process_image(image: np.ndarray, model: YOLO) -> dict:
             }
         }
         
-        # Desenhar detecções
-        annotated_frame = results.plot()
-        analysis['imagem_processada'] = annotated_frame
+        # Adicionar imagem processada
+        analysis['imagem_processada'] = results[0].plot()
         
         return analysis
         
@@ -299,44 +298,37 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
 def main():
     st.title(APP_CONFIG["title"])
     
+    # Carregar modelo
+    model = load_model()
+    if model is None:
+        st.error("Erro ao carregar modelo YOLO")
+        return
+    
     # Sidebar com informações
     with st.sidebar:
         st.info(f"TensorFlow version: {tf.__version__}")
         st.info(f"Python version: {platform.python_version()}")
     
-    # Carregar modelo
-    model = load_model()
+    # Upload de imagem
+    uploaded_file = st.file_uploader(
+        "Escolha uma imagem do bovino", 
+        type=["jpg", "jpeg", "png"]
+    )
     
-    if model is not None:
-        st.success("Modelo inicializado com sucesso!")
+    if uploaded_file is not None:
+        # Exibir imagem
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Imagem carregada", use_container_width=True)
         
-        # Upload de imagem
-        uploaded_file = st.file_uploader(
-            "Escolha uma imagem do bovino", 
-            type=["jpg", "jpeg", "png"]
-        )
-        
-        if uploaded_file is not None:
-            # Exibir imagem
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Imagem carregada", use_container_width=True)
-            
-            # Processar imagem
-            if st.button("Analisar Imagem"):
-                with st.spinner("Processando..."):
-                    img_array = np.array(image)
-                    processed_img = preprocess_image(img_array)
-                    
-                    # Fazer predição
-                    prediction = model.predict(
-                        np.expand_dims(processed_img, axis=0),
-                        verbose=0
-                    )[0][0]
-                    
-                    analysis = analyze_detection(model, prediction, img_array, processed_img)
-                    show_detection_report(analysis, img_array)
-    else:
-        st.warning("Sistema operando com funcionalidade limitada - modelo não disponível")
+        # Processar imagem
+        if st.button("Analisar Imagem"):
+            with st.spinner("Processando..."):
+                img_array = np.array(image)
+                processed_img = preprocess_image(img_array)
+                
+                # Fazer predição
+                analysis = process_image(img_array, model)
+                show_detection_report(analysis, img_array)
 
 if __name__ == "__main__":
     main()
