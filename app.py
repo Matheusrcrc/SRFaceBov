@@ -152,62 +152,68 @@ def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarra
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
-def draw_detections(image: np.ndarray, features: dict) -> np.ndarray:
-    """Desenha as marcações de detecção na imagem"""
-    img_copy = image.copy()
-    height, width = img_copy.shape[:2]
+def draw_detections(image: np.ndarray, caracteristicas: dict) -> np.ndarray:
+    """Desenha marcações de detecção na imagem"""
+    img = image.copy()
+    height, width = img.shape[:2]
     
-    # Definir cores para cada característica
+    # Cores para diferentes características
     colors = {
-        'face_detectada': (0, 255, 0),  # Verde
-        'olhos': (255, 0, 0),           # Azul
-        'focinho': (0, 0, 255),         # Vermelho
-        'orelhas': (255, 255, 0)        # Amarelo
+        'face_detectada': (0, 255, 0),
+        'olhos': (255, 0, 0),
+        'focinho': (0, 0, 255),
+        'orelhas': (255, 255, 0)
     }
     
-    # Desenhar retângulos e rótulos para cada característica
-    for feature, data in features.items():
-        if feature != 'erro' and data['confianca'] > 0.4:  # Limiar de confiança
-            conf = data['confianca']
+    # Desenhar retângulos e labels para cada característica
+    for feature, data in caracteristicas.items():
+        if feature not in colors or 'confianca' not in data:
+            continue
             
-            if feature == 'face_detectada':
-                # Retângulo principal da face
-                pt1 = (int(width * 0.2), int(height * 0.2))
-                pt2 = (int(width * 0.8), int(height * 0.8))
-                cv2.rectangle(img_copy, pt1, pt2, colors[feature], 2)
-            
-            elif feature == 'olhos':
-                # Região dos olhos
-                y = int(height * 0.35)
-                x1 = int(width * 0.3)
-                x2 = int(width * 0.7)
-                cv2.rectangle(img_copy, (x1, y-20), (x2, y+20), colors[feature], 2)
-            
-            elif feature == 'focinho':
-                # Região do focinho
-                center = (int(width * 0.5), int(height * 0.6))
-                size = int(min(width, height) * 0.2)
-                cv2.circle(img_copy, center, size, colors[feature], 2)
-            
-            elif feature == 'orelhas':
-                # Região das orelhas
-                y = int(height * 0.3)
-                for x in [int(width * 0.25), int(width * 0.75)]:
-                    cv2.circle(img_copy, (x, y), 20, colors[feature], 2)
-            
-            # Adicionar rótulo com confiança
+        conf = data['confianca']
+        if conf > 0.3:  # Threshold mínimo para exibição
+            color = colors[feature]
             label = f"{feature.replace('_', ' ').title()}: {conf:.1%}"
-            cv2.putText(img_copy, label, 
-                       (10, height - 30 + colors[feature][0] % 100),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, colors[feature], 2)
+            
+            # Calcular posição baseada na característica
+            if feature == 'face_detectada':
+                x1, y1 = int(width*0.2), int(height*0.2)
+                x2, y2 = int(width*0.8), int(height*0.8)
+            elif feature == 'olhos':
+                x1, y1 = int(width*0.3), int(height*0.3)
+                x2, y2 = int(width*0.7), int(height*0.4)
+            elif feature == 'focinho':
+                x1, y1 = int(width*0.4), int(height*0.5)
+                x2, y2 = int(width*0.6), int(height*0.7)
+            else:  # orelhas
+                x1, y1 = int(width*0.2), int(height*0.1)
+                x2, y2 = int(width*0.8), int(height*0.3)
+            
+            # Desenhar retângulo
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+            
+            # Adicionar label
+            cv2.putText(img, label, (x1, y1-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     
-    return img_copy
+    return img
 
-def create_thumbnail(image: np.ndarray, size=(100, 100)) -> Image.Image:
-    """Cria thumbnail da imagem"""
-    img_pil = Image.fromarray(image)
-    img_pil.thumbnail(size, Image.Resampling.LANCZOS)
-    return img_pil
+def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
+    """Cria thumbnail da imagem em base64"""
+    try:
+        # Redimensionar imagem
+        img = Image.fromarray(image)
+        img.thumbnail(size)
+        
+        # Converter para base64
+        import io
+        import base64
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode()
+    except Exception as e:
+        logger.error(f"Erro ao criar thumbnail: {e}")
+        return ""
 
 def show_detection_report(analysis: dict, original_image: np.ndarray):
     """Exibe relatório detalhado da detecção"""
@@ -221,12 +227,7 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
         st.metric("Qualidade", analysis['qualidade'])
         st.metric("Dimensões", f"{analysis['dimensoes'][0]}x{analysis['dimensoes'][1]}")
     
-    # Mostrar imagem com marcações
-    if 'caracteristicas' in analysis and 'erro' not in analysis['caracteristicas']:
-        marked_image = draw_detections(original_image, analysis['caracteristicas'])
-        st.image(marked_image, caption="Detecções Identificadas", use_container_width=True)
-    
-    # Características detectadas
+    # Mostrar características detectadas
     st.subheader("Características Detectadas")
     for feature, data in analysis['caracteristicas'].items():
         if feature != 'erro':
@@ -237,56 +238,53 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
                 f"Confiança: :{conf_color}[{data['confianca']:.2%}]"
             )
     
-    # Histórico
+    # Desenhar detecções na imagem
+    if 'erro' not in analysis['caracteristicas']:
+        marked_image = draw_detections(original_image, analysis['caracteristicas'])
+        st.image(marked_image, caption="Detecções identificadas", use_container_width=True)
+    
+    with st.expander("Detalhes Técnicos"):
+        st.json(analysis)
+    
+    # Adicionar ao histórico com thumbnail
     if 'detection_history' not in st.session_state:
         st.session_state.detection_history = []
     
-    # Criar thumbnail e adicionar ao histórico
-    thumbnail = create_thumbnail(original_image)
-    analysis['thumbnail'] = thumbnail
-    st.session_state.detection_history.append(analysis)
+    history_entry = {
+        'Timestamp': analysis['timestamp'],
+        'Status': analysis['status'],
+        'Confiança': analysis['confianca'],
+        'Qualidade': analysis['qualidade'],
+        'Face': analysis['caracteristicas'].get('face_detectada', {}).get('confianca', 0),
+        'Olhos': analysis['caracteristicas'].get('olhos', {}).get('confianca', 0),
+        'Focinho': analysis['caracteristicas'].get('focinho', {}).get('confianca', 0),
+        'Orelhas': analysis['caracteristicas'].get('orelhas', {}).get('confianca', 0),
+        'Thumbnail': create_thumbnail(original_image)
+    }
     
+    st.session_state.detection_history.append(history_entry)
+    
+    # Mostrar histórico
     if st.session_state.detection_history:
         st.subheader("Histórico de Detecções")
+        df = pd.DataFrame(st.session_state.detection_history)
         
-        # Criar DataFrame com todas as informações
-        hist_data = []
-        for hist in st.session_state.detection_history:
-            features = hist.get('caracteristicas', {})
-            hist_data.append({
-                'Thumbnail': hist['thumbnail'],
-                'Timestamp': hist['timestamp'],
-                'Status': hist['status'],
-                'Confiança': hist['confianca'],
-                'Qualidade': hist['qualidade'],
-                'Face': features.get('face_detectada', {}).get('confianca', 0),
-                'Olhos': features.get('olhos', {}).get('confianca', 0),
-                'Focinho': features.get('focinho', {}).get('confianca', 0),
-                'Orelhas': features.get('orelhas', {}).get('confianca', 0)
-            })
+        # Converter thumbnail para imagem
+        def image_formatter(img_str):
+            return f'<img src="data:image/png;base64,{img_str}" width="100">'
         
-        df = pd.DataFrame(hist_data)
+        # Formatar colunas numéricas como percentual
+        for col in ['Confiança', 'Face', 'Olhos', 'Focinho', 'Orelhas']:
+            df[col] = df[col].apply(lambda x: f"{float(x):.2%}" if isinstance(x, (float, int)) else x)
         
-        # Exibir DataFrame com formatação personalizada
-        st.dataframe(
-            df,
-            column_config={
-                "Thumbnail": st.column_config.ImageColumn("Imagem", width=100),
-                "Confiança": st.column_config.ProgressColumn(
-                    "Confiança Geral",
-                    help="Nível de confiança da detecção",
-                    format="%.2f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-                "Face": st.column_config.ProgressColumn(
-                    "Conf. Face",
-                    format="%.2f%%",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
-            use_container_width=True
+        # Exibir tabela com thumbnail
+        st.write(
+            df.to_html(
+                escape=False,
+                formatters={'Thumbnail': image_formatter},
+                index=False
+            ),
+            unsafe_allow_html=True
         )
 
 def main():
