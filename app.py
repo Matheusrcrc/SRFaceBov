@@ -44,34 +44,15 @@ APP_CONFIG = {
 }
 
 @st.cache_resource
-def load_model() -> Optional[tf.keras.Model]:
-    """
-    Cria e retorna um modelo base pré-treinado para reconhecimento facial
-    """
+def load_model() -> Optional[YOLO]:
+    """Carrega modelo YOLO para detecção"""
     try:
-        base_model = tf.keras.applications.MobileNetV2(
-            input_shape=(224, 224, 3),
-            include_top=False,
-            weights='imagenet'
-        )
-        
-        model = tf.keras.Sequential([
-            base_model,
-            tf.keras.layers.GlobalAveragePooling2D(),
-            tf.keras.layers.Dense(1024, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(512, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
-        
-        model.compile(
-            optimizer='adam',
-            loss='binary_crossentropy',
-            metrics=['accuracy']
-        )
+        from ultralytics import YOLO
+        model = YOLO('yolov8n.pt')
+        logger.info("Modelo YOLO carregado com sucesso")
         return model
     except Exception as e:
-        logger.error(f"Erro ao criar modelo: {str(e)}")
+        logger.error(f"Erro ao carregar modelo YOLO: {e}")
         return None
 
 def preprocess_image(image: np.ndarray) -> np.ndarray:
@@ -80,51 +61,51 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     image = image / 255.0
     return image
 
-def analyze_features(model: tf.keras.Model, processed_img: np.ndarray) -> dict:
-    """Analisa características detalhadas na imagem"""
+def process_image(image: np.ndarray, model: YOLO) -> dict:
+    """Processa imagem com YOLO e retorna análise"""
     try:
-        # Obter predições das camadas intermediárias
-        predictions = model.predict(np.expand_dims(processed_img, axis=0), verbose=0)
+        # Fazer predição
+        results = model(image)[0]
         
-        # Calcular confiança para diferentes características
-        confidence = float(predictions[0][0])
-        threshold = 0.5
-        
-        caracteristicas = {
-            'face_detectada': {
-                'confianca': min(confidence * 1.2, 1.0),
-                'descricao': 'Face bovina identificada'
-            },
-            'olhos': {
-                'confianca': min(confidence * 0.9, 1.0),
-                'descricao': 'Região dos olhos'
-            },
-            'focinho': {
-                'confianca': min(confidence * 0.95, 1.0),
-                'descricao': 'Região do focinho'
-            },
-            'orelhas': {
-                'confianca': min(confidence * 0.85, 1.0),
-                'descricao': 'Região das orelhas'
+        # Extrair detecções
+        detections = []
+        for r in results.boxes.data.tolist():
+            x1, y1, x2, y2, conf, cls = r
+            detection = {
+                'bbox': [float(x1), float(y1), float(x2), float(y2)],
+                'confianca': float(conf),
+                'classe': results.names[int(cls)]
+            }
+            detections.append(detection)
+            
+        # Preparar análise
+        analysis = {
+            'score': max([d['confianca'] for d in detections], default=0.0),
+            'confianca': f"{max([d['confianca'] for d in detections], default=0.0):.2%}",
+            'status': 'Positivo' if detections else 'Negativo',
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'dimensoes': image.shape,
+            'qualidade': 'Alta' if min(image.shape[:2]) >= 640 else 'Média',
+            'caracteristicas': {
+                f"deteccao_{i}": {
+                    'confianca': d['confianca'],
+                    'descricao': f"Detectado {d['classe']}"
+                }
+                for i, d in enumerate(detections)
             }
         }
         
-        # Validar confiança mínima
-        if confidence < threshold:
-            caracteristicas['aviso'] = {
-                'confianca': confidence,
-                'descricao': 'Baixa confiança na detecção'
-            }
+        # Desenhar detecções
+        annotated_frame = results.plot()
+        analysis['imagem_processada'] = annotated_frame
         
-        return caracteristicas
+        return analysis
         
     except Exception as e:
-        logger.error(f"Erro na análise de características: {str(e)}")
+        logger.error(f"Erro no processamento: {e}")
         return {
-            'erro': {
-                'confianca': 0.0,
-                'descricao': 'Falha na análise detalhada'
-            }
+            'erro': str(e),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
 def format_dimensions(dimensions: tuple) -> str:
@@ -267,7 +248,7 @@ def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
         return ""
 
 def show_detection_report(analysis: dict, original_image: np.ndarray):
-    """Exibe relatório detalhado da detecção"""
+    """Exibe relatório com detecções YOLO"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -278,26 +259,23 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
         st.metric("Qualidade", analysis['qualidade'])
         st.metric("Dimensões", f"{analysis['dimensoes'][0]}x{analysis['dimensoes'][1]}")
     
-    # Mostrar características detectadas
-    st.subheader("Características Detectadas")
-    for feature, data in analysis['caracteristicas'].items():
-        if feature != 'erro':
-            conf_color = 'green' if data['confianca'] > 0.7 else 'orange' if data['confianca'] > 0.4 else 'red'
-            st.markdown(
-                f"**{feature.replace('_', ' ').title()}**: "
-                f"_{data['descricao']}_ - "
-                f"Confiança: :{conf_color}[{data['confianca']:.2%}]"
-            )
+    # Mostrar detecções
+    if 'imagem_processada' in analysis:
+        st.image(analysis['imagem_processada'], caption="Detecções YOLO", use_container_width=True)
     
-    # Desenhar detecções na imagem
-    if 'erro' not in analysis['caracteristicas']:
-        marked_image = draw_detections(original_image, analysis['caracteristicas'])
-        st.image(marked_image, caption="Detecções identificadas", use_container_width=True)
+    # Características detectadas
+    st.subheader("Detecções")
+    for feature, data in analysis['caracteristicas'].items():
+        conf_color = 'green' if data['confianca'] > 0.7 else 'orange' if data['confianca'] > 0.4 else 'red'
+        st.markdown(
+            f"**{feature}**: {data['descricao']} - "
+            f"Confiança: :{conf_color}[{data['confianca']:.2%}]"
+        )
     
     with st.expander("Detalhes Técnicos"):
         st.json(analysis)
-    
-    # Adicionar ao histórico com thumbnail
+        
+    # Atualizar histórico
     if 'detection_history' not in st.session_state:
         st.session_state.detection_history = []
     
@@ -306,10 +284,7 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
         'Status': analysis['status'],
         'Confiança': analysis['confianca'],
         'Qualidade': analysis['qualidade'],
-        'Face': analysis['caracteristicas'].get('face_detectada', {}).get('confianca', 0),
-        'Olhos': analysis['caracteristicas'].get('olhos', {}).get('confianca', 0),
-        'Focinho': analysis['caracteristicas'].get('focinho', {}).get('confianca', 0),
-        'Orelhas': analysis['caracteristicas'].get('orelhas', {}).get('confianca', 0),
+        'Detecções': len(analysis['caracteristicas']),
         'Thumbnail': create_thumbnail(original_image)
     }
     
@@ -319,24 +294,7 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
     if st.session_state.detection_history:
         st.subheader("Histórico de Detecções")
         df = pd.DataFrame(st.session_state.detection_history)
-        
-        # Converter thumbnail para imagem
-        def image_formatter(img_str):
-            return f'<img src="data:image/png;base64,{img_str}" width="100">'
-        
-        # Formatar colunas numéricas como percentual
-        for col in ['Confiança', 'Face', 'Olhos', 'Focinho', 'Orelhas']:
-            df[col] = df[col].apply(lambda x: f"{float(x):.2%}" if isinstance(x, (float, int)) else x)
-        
-        # Exibir tabela com thumbnail
-        st.write(
-            df.to_html(
-                escape=False,
-                formatters={'Thumbnail': image_formatter},
-                index=False
-            ),
-            unsafe_allow_html=True
-        )
+        st.dataframe(df, use_container_width=True)
 
 def main():
     st.title(APP_CONFIG["title"])
