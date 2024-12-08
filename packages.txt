@@ -1,4 +1,6 @@
 python3-dev
 build-essential
 zlib1g-dev
-libpython3-dev
+libjpeg-dev
+libtiff-dev
+libfreetype6-dev
