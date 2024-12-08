@@ -1,44 +1,67 @@
+# Core imports primeiro
+import os
+import platform
+import logging
+from datetime import datetime
+from typing import Optional
+
+# Third-party imports em segundo
 import streamlit as st
-
-# Primeira chamada ao Streamlit deve ser set_page_config
-st.set_page_config(
-    page_title="Sistema de Reconhecimento Facial Bovino",
-    page_icon="🐮",
-    layout="wide"
-)
-
-# Imports restantes
 import cv2
 import numpy as np
 from PIL import Image
 import tensorflow as tf
 import sqlite3
-from datetime import datetime
-import os
-import platform
-import logging
-from typing import Optional
 
-# Configurar logging
+# Configurar logging antes de tudo
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
 # Configurações da aplicação
 APP_CONFIG = {
     "title": "Sistema de Reconhecimento Facial Bovino",
     "icon": "🐮",
-    "db_path": "bovine_records.db",
+    "db_path": os.path.join(os.path.dirname(__file__), "bovine_records.db"),
     "db_timeout": 30
 }
 
-# Verificar versão do TensorFlow e compatibilidade
-tf_version = tf.__version__
+# Configuração Streamlit
+st.set_page_config(
+    page_title=APP_CONFIG["title"],
+    page_icon=APP_CONFIG["icon"],
+    layout="wide"
+)
 
-# Mostrar informações de versão
-st.sidebar.info(f"TensorFlow version: {tf_version}")
-st.sidebar.info(f"Python version: {platform.python_version()}")
+# Verificar ambiente
+tf_version = tf.__version__
+python_version = platform.python_version()
+
+# Informações no sidebar
+with st.sidebar:
+    st.info(f"TensorFlow version: {tf_version}")
+    st.info(f"Python version: {python_version}")
+
+def init_db() -> Optional[sqlite3.Connection]:
+    """
+    Inicializa a conexão com o banco de dados SQLite.
+    
+    Returns:
+        Optional[sqlite3.Connection]: Conexão com o banco ou None se houver erro
+    """
+    try:
+        conn = sqlite3.connect(
+            APP_CONFIG["db_path"],
+            timeout=APP_CONFIG["db_timeout"]
+        )
+        logger.info(f"Banco de dados conectado: {APP_CONFIG['db_path']}")
+        return conn
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao conectar ao banco: {e}")
+        st.error(f"Erro de conexão com banco de dados: {e}")
+        return None
 
 # Initialize database with improved error handling
 def init_db() -> Optional[sqlite3.Connection]:
