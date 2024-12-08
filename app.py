@@ -44,6 +44,91 @@ APP_CONFIG = {
     "use_gpu": False
 }
 
+# Adicionar após as configurações
+def init_db():
+    """Inicializa banco de dados SQLite"""
+    conn = sqlite3.connect(APP_CONFIG["db_path"])
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS bovinos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            nome TEXT,
+            caracteristicas TEXT,
+            confianca REAL,
+            primeira_deteccao DATETIME,
+            ultima_deteccao DATETIME,
+            total_deteccoes INTEGER DEFAULT 1
+        )
+    ''')
+    conn.commit()
+    return conn
+
+def find_similar_bovino(caracteristicas: dict, threshold: float = 0.85) -> Optional[dict]:
+    """Busca bovino similar no banco"""
+    conn = sqlite3.connect(APP_CONFIG["db_path"])
+    c = conn.cursor()
+    c.execute("SELECT * FROM bovinos")
+    bovinos = c.fetchall()
+    
+    for bovino in bovinos:
+        stored_caract = eval(bovino[3])  # Características armazenadas
+        similarity = calculate_similarity(caracteristicas, stored_caract)
+        if similarity >= threshold:
+            return {
+                'id': bovino[0],
+                'codigo': bovino[1],
+                'nome': bovino[2],
+                'similarity': similarity
+            }
+    return None
+
+def calculate_similarity(caract1: dict, caract2: dict) -> float:
+    """Calcula similaridade entre características"""
+    try:
+        # Comparar features principais
+        features1 = [v['confianca'] for k, v in caract1.items()]
+        features2 = [v['confianca'] for k, v in caract2.items()]
+        
+        # Calcular similaridade usando correlação
+        return float(np.corrcoef(features1, features2)[0, 1])
+    except:
+        return 0.0
+
+def register_new_bovino(caracteristicas: dict) -> dict:
+    """Registra novo bovino no banco"""
+    codigo = st.text_input("Código do Bovino:")
+    nome = st.text_input("Nome do Bovino:")
+    
+    if st.button("Registrar Bovino"):
+        conn = sqlite3.connect(APP_CONFIG["db_path"])
+        c = conn.cursor()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        c.execute("""
+            INSERT INTO bovinos (codigo, nome, caracteristicas, confianca, 
+                               primeira_deteccao, ultima_deteccao)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (codigo, nome, str(caracteristicas), 
+              max(v['confianca'] for v in caracteristicas.values()),
+              now, now))
+        
+        conn.commit()
+        return {'codigo': codigo, 'nome': nome}
+    return None
+
+def update_bovino_detection(bovino_id: int):
+    """Atualiza contagem de detecções"""
+    conn = sqlite3.connect(APP_CONFIG["db_path"])
+    c = conn.cursor()
+    c.execute("""
+        UPDATE bovinos 
+        SET total_deteccoes = total_deteccoes + 1,
+            ultima_deteccao = ?
+        WHERE id = ?
+    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), bovino_id))
+    conn.commit()
+
 @st.cache_resource
 def load_model() -> Optional[Any]:
     """Carrega modelo YOLO para detecção"""
@@ -246,8 +331,29 @@ def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
         logger.error(f"Erro ao criar thumbnail: {e}")
         return ""
 
-def show_detection_report(analysis: dict, original_image: np.ndarray):
-    """Exibe relatório com detecções YOLO"""
+def show_detection_report(analysis: dict, image_np: np.ndarray):
+    """Exibe relatório com identificação do bovino"""
+    if 'caracteristicas' in analysis:
+        # Buscar bovino similar
+        similar = find_similar_bovino(analysis['caracteristicas'])
+        
+        if similar:
+            # Bovino conhecido
+            st.success(f"Bovino Reconhecido!")
+            st.write(f"Código: {similar['codigo']}")
+            st.write(f"Nome: {similar['nome']}")
+            st.write(f"Similaridade: {similar['similarity']:.2%}")
+            
+            # Atualizar registros
+            update_bovino_detection(similar['id'])
+            
+        else:
+            # Novo bovino
+            st.warning("Novo bovino detectado!")
+            if novo_bovino := register_new_bovino(analysis['caracteristicas']):
+                st.success(f"Bovino {novo_bovino['nome']} registrado com sucesso!")
+    
+    # Continuar com o relatório normal...
     col1, col2 = st.columns(2)
     
     with col1:
@@ -257,43 +363,10 @@ def show_detection_report(analysis: dict, original_image: np.ndarray):
     with col2:
         st.metric("Qualidade", analysis['qualidade'])
         st.metric("Dimensões", f"{analysis['dimensoes'][0]}x{analysis['dimensoes'][1]}")
-    
-    # Mostrar detecções
+
+    # Mostrar imagem processada
     if 'imagem_processada' in analysis:
-        st.image(analysis['imagem_processada'], caption="Detecções YOLO", use_container_width=True)
-    
-    # Características detectadas
-    st.subheader("Detecções")
-    for feature, data in analysis['caracteristicas'].items():
-        conf_color = 'green' if data['confianca'] > 0.7 else 'orange' if data['confianca'] > 0.4 else 'red'
-        st.markdown(
-            f"**{feature}**: {data['descricao']} - "
-            f"Confiança: :{conf_color}[{data['confianca']:.2%}]"
-        )
-    
-    with st.expander("Detalhes Técnicos"):
-        st.json(analysis)
-        
-    # Atualizar histórico
-    if 'detection_history' not in st.session_state:
-        st.session_state.detection_history = []
-    
-    history_entry = {
-        'Timestamp': analysis['timestamp'],
-        'Status': analysis['status'],
-        'Confiança': analysis['confianca'],
-        'Qualidade': analysis['qualidade'],
-        'Detecções': len(analysis['caracteristicas']),
-        'Thumbnail': create_thumbnail(original_image)
-    }
-    
-    st.session_state.detection_history.append(history_entry)
-    
-    # Mostrar histórico
-    if st.session_state.detection_history:
-        st.subheader("Histórico de Detecções")
-        df = pd.DataFrame(st.session_state.detection_history)
-        st.dataframe(df, use_container_width=True)
+        st.image(analysis['imagem_processada'], caption="Detecções", use_container_width=True)
 
 def main():
     st.title(APP_CONFIG["title"])
