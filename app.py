@@ -21,14 +21,14 @@ from PIL import Image
 import tensorflow as tf
 import sqlite3
 
-# Configurar logging com formato melhorado
+# Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configurar TensorFlow para reduzir warnings
+# Configurar TensorFlow
 tf.get_logger().setLevel('ERROR')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -36,37 +36,38 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 APP_CONFIG = {
     "title": "Sistema de Reconhecimento Facial Bovino",
     "icon": "🐮",
-    "db_path": os.path.join(os.path.dirname(__file__), "bovine_records.db"),
+    "db_path": ":memory:",  # Banco em memória
     "db_timeout": 30,
-    "model_path": os.path.join(os.path.dirname(__file__), "models", "model.h5"),
-    "use_gpu": False  # Configuração para uso de GPU
+    "use_gpu": False
 }
 
 @st.cache_resource
 def load_model() -> Optional[tf.keras.Model]:
     """
-    Carrega o modelo de IA do arquivo.
-    
-    Returns:
-        Optional[tf.keras.Model]: Modelo carregado ou None se houver erro
+    Carrega modelo base do TensorFlow e adapta para uso
     """
     try:
-        if not os.path.exists(APP_CONFIG["model_path"]):
-            st.error("Modelo não encontrado. Verifique o caminho do arquivo.")
-            logger.error(f"Arquivo do modelo não encontrado: {APP_CONFIG['model_path']}")
-            return None
-            
-        # Configurar uso de GPU/CPU
-        if not APP_CONFIG["use_gpu"]:
-            tf.config.set_visible_devices([], 'GPU')
-            
-        model = tf.keras.models.load_model(APP_CONFIG["model_path"])
-        logger.info("Modelo carregado com sucesso")
+        # Usar modelo pré-treinado do TF
+        base_model = tf.keras.applications.MobileNetV2(
+            input_shape=(224, 224, 3),
+            include_top=False,
+            weights='imagenet'
+        )
+        
+        # Adicionar camadas para nossa tarefa
+        model = tf.keras.Sequential([
+            base_model,
+            tf.keras.layers.GlobalAveragePooling2D(),
+            tf.keras.layers.Dense(1024, activation='relu'),
+            tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+        
+        logger.info("Modelo base carregado com sucesso")
         return model
         
     except Exception as e:
         st.error(f"Erro ao carregar modelo: {str(e)}")
-        logger.error(f"Erro ao carregar modelo: {str(e)}", exc_info=True)
+        logger.error(f"Erro ao carregar modelo: {str(e)}")
         return None
 
 # Versões e ambiente
