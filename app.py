@@ -23,6 +23,10 @@ import sqlite3
 import pandas as pd
 from ultralytics import YOLO  # Importação do YOLO
 
+# Adicionar após as importações
+from ultralytics import YOLO
+import torch
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +45,10 @@ APP_CONFIG = {
     "db_path": ":memory:",
     "db_timeout": 30,
     "image_size": (224, 224),
-    "use_gpu": False
+    "use_gpu": False,
+    "confidence": 0.25,
+    "model_path": "yolov8n.pt",
+    "available_models": ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt", "yolov8x.pt"],
 }
 
 # Adicionar após APP_CONFIG
@@ -189,10 +196,10 @@ def update_bovino_detection(bovino_id: int) -> bool:
             conn.close()
 
 @st.cache_resource
-def load_model() -> Optional[Any]:
+def load_model(model_path: str) -> Optional[Any]:
     """Carrega modelo YOLO para detecção"""
     try:
-        model = YOLO('yolov8n.pt')
+        model = YOLO(model_path)
         logger.info("Modelo YOLO carregado com sucesso")
         return model
     except Exception as e:
@@ -440,37 +447,85 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
 def main():
     st.title(APP_CONFIG["title"])
     
-    # Carregar modelo
-    model = load_model()
+    # Sidebar para configurações
+    with st.sidebar:
+        # ...existing code...
+        
+        st.header("Configurações")
+        confidence = st.slider(
+            "Confiança", 
+            min_value=0.0, 
+            max_value=1.0, 
+            value=APP_CONFIG["confidence"]
+        )
+        
+        model_path = st.selectbox(
+            "Selecione o modelo",
+            APP_CONFIG["available_models"]
+        )
+        
+        source_type = st.radio(
+            "Tipo de entrada",
+            ["Imagem", "Vídeo"]
+        )
+
+    # Carregar modelo com base na seleção
+    model = load_model(model_path)
     if model is None:
         st.error("Erro ao carregar modelo YOLO")
         return
-    
-    # Sidebar com informações
-    with st.sidebar:
-        st.info(f"TensorFlow version: {tf.__version__}")
-        st.info(f"Python version: {platform.python_version()}")
-    
-    # Upload de imagem
-    uploaded_file = st.file_uploader(
-        "Escolha uma imagem do bovino", 
-        type=["jpg", "jpeg", "png"]
-    )
-    
-    if uploaded_file is not None:
-        # Exibir imagem
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Imagem carregada", use_container_width=True)
+
+    if source_type == "Imagem":
+        uploaded_file = st.file_uploader(
+            "Escolha uma imagem do bovino", 
+            type=["jpg", "jpeg", "png"]
+        )
         
-        # Processar imagem
-        if st.button("Analisar Imagem"):
-            with st.spinner("Processando..."):
-                img_array = np.array(image)
-                processed_img = preprocess_image(img_array)
-                
-                # Fazer predição
-                analysis = process_image(img_array, model)
-                show_detection_report(analysis, img_array)
+        if uploaded_file:
+            # Exibir imagem
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Imagem carregada", use_container_width=True)
+            
+            # Processar imagem
+            if st.button("Analisar Imagem"):
+                with st.spinner("Processando..."):
+                    img_array = np.array(image)
+                    processed_img = preprocess_image(img_array)
+                    
+                    # Fazer predição
+                    analysis = process_image(img_array, model)
+                    show_detection_report(analysis, img_array)
+            
+    else:  # Vídeo
+        uploaded_video = st.file_uploader(
+            "Escolha um vídeo", 
+            type=["mp4", "avi", "mov"]
+        )
+        
+        if uploaded_video:
+            # Salvar vídeo temporariamente
+            temp_path = f"temp_{uploaded_video.name}"
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_video.getbuffer())
+            
+            # Processar vídeo
+            try:
+                with st.spinner("Processando vídeo..."):
+                    results = model.track(
+                        source=temp_path,
+                        conf=confidence,
+                        persist=True
+                    )
+                    
+                    # Mostrar vídeo processado
+                    processed_video = results[0].save(temp_path)
+                    st.video(processed_video)
+                    
+            except Exception as e:
+                st.error(f"Erro ao processar vídeo: {str(e)}")
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
 if __name__ == "__main__":
     main()
