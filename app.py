@@ -24,7 +24,7 @@ import sqlite3
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levellevelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Corrigido levelname
 )
 logger = logging.getLogger(__name__)
 
