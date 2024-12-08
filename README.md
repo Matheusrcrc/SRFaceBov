@@ -1,33 +1,27 @@
-# Bovine Facial Recognition System
+# Sistema de Reconhecimento Facial Bovino
 
-## Overview
-This system provides automated facial recognition for cattle management, enabling efficient tracking and monitoring of individual bovines in agricultural settings.
+## Visão Geral
+Sistema de reconhecimento facial bovino baseado em IA para identificação e rastreamento de bovinos em ambientes de produção. Utiliza YOLOv8 e TensorFlow para detecção e reconhecimento preciso.
 
-## Features
-- Automated bovine facial detection and recognition
-- Secure database management for bovine records
-- Image processing and feature extraction
-- Historical tracking of recognition events
-- Performance analytics and reporting
+## Características
+- Detecção facial bovina em tempo real
+- Reconhecimento e identificação individual
+- Interface web intuitiva com Streamlit
+- Sistema de monitoramento de recursos
+- Banco de dados integrado para rastreamento
+- Suporte a imagens e vídeos
+- Processamento em GPU (quando disponível)
 
-## Technical Architecture
-### Components
-1. Database Management
-   - SQLite database for storing bovine information
-   - Facial feature vectors storage
-   - Recognition history tracking
+## Requisitos Técnicos
+- Python 3.12+
+- CUDA (opcional, para GPU)
+- Sistema operacional: Linux, macOS ou Windows
+- Mínimo de 4GB RAM (8GB recomendado)
+- Espaço em disco: 2GB+
 
-2. Image Processing
-   - Face detection using OpenCV
-   - Feature extraction using HOG descriptors
-   - Image preprocessing and enhancement
+## Instalação
 
-3. Recognition System
-   - Real-time facial recognition
-   - Confidence score calculation
-   - Historical data tracking
-
-## Installation
+1. Criar ambiente virtual:
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -38,29 +32,29 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-## Usage
-1. Database Setup
+## Uso
+1. Configuração do Banco de Dados
 ```python
 from bovine_system import BovineDatabase
 db = BovineDatabase()
 db.initialize_database()
 ```
 
-2. Image Processing
+2. Processamento de Imagem
 ```python
 from bovine_system import BovineImageProcessor
 processor = BovineImageProcessor()
 features = processor.process_image('bovine_image.jpg')
 ```
 
-3. Recognition
+3. Reconhecimento
 ```python
 from bovine_system import BovineRecognition
 recognizer = BovineRecognition()
 result = recognizer.identify_bovine('test_image.jpg')
 ```
 
-## Project Structure
+## Estrutura do Projeto
 ```
 bovine_recognition/
 ├── data/
@@ -72,26 +66,18 @@ bovine_recognition/
 └── output/
 ```
 
-## Performance Metrics
-- Face Detection Accuracy: 95%
-- Recognition Confidence Threshold: 0.85
-- Average Processing Time: <2s per image
+## Métricas de Desempenho
+- Precisão na Detecção Facial: 95%
+- Limite de Confiança para Reconhecimento: 0.85
+- Tempo Médio de Processamento: <2s por imagem
 
-## Requirements
-- Python 3.8+
-- OpenCV
-- NumPy
-- SQLite3
-- Pandas
-- Matplotlib
-
-## License
+## Licença
 MIT License
 
-## Contributing
-1. Fork the repository
-2. Create your feature branch
-3. Submit pull request with comprehensive description
+## Contribuição
+1. Faça um fork do repositório
+2. Crie sua branch de feature
+3. Envie um pull request com uma descrição abrangente
 
-## Support
-For support, please contact support@bovinerecognition.com
+## Suporte
+Para suporte, entre em contato com support@bovinerecognition.com
