@@ -222,6 +222,7 @@ def update_bovino_detection(bovino_id: int) -> bool:
 def load_model(model_path: str = "yolov8n.pt") -> Optional[YOLO]:  # Adicionado parâmetro model_path
     """Carrega modelo YOLO para detecção"""
     try:
+        from ultralytics import YOLO
         model = YOLO(model_path)  # Usa o model_path fornecido
         logger.info("Modelo YOLO carregado com sucesso")
         return model
@@ -242,7 +243,6 @@ def process_image(image: np.ndarray, model: YOLO) -> dict:
         results = model.predict(
             source=image,
             conf=0.25,
-            verbose=False,
             show=False
         )
         
@@ -509,6 +509,10 @@ def show_bovino_history(bovino_id: int):
 def main():
     st.title(APP_CONFIG["title"])
     
+    # Inicializar banco de dados primeiro
+    if not os.path.exists(APP_CONFIG["db_path"]):
+        init_db()
+        
     # Sidebar para configurações
     with st.sidebar:
         # ...existing code...
