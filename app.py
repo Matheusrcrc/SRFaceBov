@@ -424,18 +424,60 @@ def create_thumbnail(image: np.ndarray, size=(100, 100)) -> np.ndarray:
         logger.error(f"Erro ao criar thumbnail: {e}")
         return image
 
+def save_detection_history(bovino_id: int, analysis: dict) -> bool:
+    """Salva histórico de uma detecção"""
+    try:
+        conn = get_db()
+        if not conn:
+            return False
+            
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO historico_deteccoes 
+            (bovino_id, timestamp, confianca, detalhes)
+            VALUES (?, ?, ?, ?)
+        """, (
+            bovino_id,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            analysis['score'],
+            str(analysis)
+        ))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar histórico: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def show_detection_report(analysis: dict, image_np: np.ndarray):
     """Exibe relatório com identificação do bovino"""
     if 'caracteristicas' not in analysis:
         st.error("Nenhuma característica detectada na imagem")
         return
 
-    # Buscar bovino similar
-    similar = find_similar_bovino(analysis['caracteristicas'])
-    
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([2, 1])
     
     with col1:
+        # Mostrar imagem processada
+        if 'imagem_processada' in analysis:
+            st.image(
+                analysis['imagem_processada'],
+                caption="Detecções",
+                use_container_width=True
+            )
+    
+    with col2:
+        # Métricas principais
+        st.metric("Confiança", analysis['confianca'])
+        st.metric("Status", analysis['status'])
+        st.metric("Qualidade", analysis['qualidade'])
+        
+        # Buscar bovino similar
+        similar = find_similar_bovino(analysis['caracteristicas'])
+        
         if similar:
             # Bovino conhecido
             st.success("🐮 Bovino Reconhecido!")
@@ -443,12 +485,13 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
             st.write(f"**Nome:** {similar['nome']}")
             st.write(f"**Similaridade:** {similar['similarity']:.2%}")
             
-            # Atualizar registros
+            # Atualizar registros e salvar histórico
             if update_bovino_detection(similar['id']):
+                save_detection_history(similar['id'], analysis)
                 st.info("✅ Registro atualizado com sucesso!")
                 
-                # Mostrar histórico
-                show_bovino_history(similar['id'])
+            # Mostrar histórico
+            show_bovino_history(similar['id'])
         else:
             st.warning("⚠️ Novo bovino detectado!")
             
@@ -458,7 +501,7 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
                 nome = st.text_input("Nome do bovino:")
                 submit = st.form_submit_button("Registrar Bovino")
                 
-                if submit and codigo and nome:  # Corrigido operadores lógicos de && para and
+                if submit and codigo and nome:
                     novo_bovino = register_new_bovino(
                         analysis['caracteristicas'],
                         codigo,
@@ -466,22 +509,10 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
                     )
                     if novo_bovino:
                         st.success(f"✅ Bovino {novo_bovino['nome']} registrado!")
+                        # Recarregar página para mostrar histórico
+                        st.experimental_rerun()
                     else:
                         st.error("❌ Erro ao registrar bovino")
-    
-    with col2:
-        # Métricas da detecção
-        st.metric("Score", analysis['confianca'])
-        st.metric("Status", analysis['status'])
-        st.metric("Qualidade", analysis['qualidade'])
-
-    # Mostrar imagem processada
-    if 'imagem_processada' in analysis:
-        st.image(
-            analysis['imagem_processada'], 
-            caption="Detecções",
-            use_container_width=True
-        )
 
 def show_bovino_history(bovino_id: int):
     """Mostra histórico de detecções do bovino"""
@@ -490,11 +521,12 @@ def show_bovino_history(bovino_id: int):
         if not conn:
             return
             
+        # Buscar dados do histórico
         df = pd.read_sql_query('''
             SELECT 
-                h.timestamp,
-                h.confianca,
-                h.detalhes
+                strftime('%d/%m/%Y %H:%M', h.timestamp) as Data,
+                h.confianca as Confiança,
+                COUNT(*) OVER (ORDER BY h.timestamp) as "Detecção #"
             FROM historico_deteccoes h
             WHERE h.bovino_id = ?
             ORDER BY h.timestamp DESC
@@ -503,7 +535,21 @@ def show_bovino_history(bovino_id: int):
         
         if not df.empty:
             st.write("### Histórico de Detecções")
-            st.dataframe(df)
+            
+            # Formatar colunas
+            df['Confiança'] = df['Confiança'].apply(lambda x: f"{x:.1%}")
+            
+            # Exibir tabela formatada
+            st.dataframe(
+                df,
+                column_config={
+                    "Data": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm"),
+                    "Confiança": st.column_config.ProgressColumn(min_value=0, max_value=100),
+                    "Detecção #": st.column_config.NumberColumn(format="%d")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
         
     except Exception as e:
         logger.error(f"Erro ao mostrar histórico: {e}")
@@ -564,7 +610,11 @@ def main():
                 with st.spinner("Processando..."):
                     processed_img = preprocess_image(image)
                     analysis = process_image(image, model)
-                    show_detection_report(analysis, image)
+                    
+                    if 'erro' not in analysis:
+                        show_detection_report(analysis, image)
+                    else:
+                        st.error(f"Erro ao processar imagem: {analysis['erro']}")
             
     else:  # Vídeo
         uploaded_video = st.file_uploader(
