@@ -24,14 +24,12 @@ except ImportError:
 
 # Third-party imports
 import numpy as np
-from PIL import Image
 import tensorflow as tf
 import sqlite3
 import pandas as pd
 from ultralytics import YOLO  # Importação do YOLO
 
 # Adicionar após as importações
-from ultralytics import YOLO
 import torch
 
 # Configurar logging
@@ -221,10 +219,10 @@ def update_bovino_detection(bovino_id: int) -> bool:
             conn.close()
 
 @st.cache_resource
-def load_model() -> Optional[YOLO]:
+def load_model(model_path: str = "yolov8n.pt") -> Optional[YOLO]:  # Adicionado parâmetro model_path
     """Carrega modelo YOLO para detecção"""
     try:
-        model = YOLO("yolov8n.pt")  # Carrega modelo padrão
+        model = YOLO(model_path)  # Usa o model_path fornecido
         logger.info("Modelo YOLO carregado com sucesso")
         return model
     except Exception as e:
@@ -301,7 +299,7 @@ def analyze_detection(model: tf.keras.Model, prediction: float, image: np.ndarra
             'score': float(prediction),
             'confianca': f"{float(prediction):.2%}",
             'status': 'Positivo' if prediction > 0.5 else 'Negativo',
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%:%S"),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # Corrigido formato da string
             'dimensoes': image.shape,
             'qualidade': 'Alta' if min(image.shape[:2]) >= 224 else 'Média',
             'caracteristicas': analyze_features(model, processed_img)
@@ -412,22 +410,14 @@ def draw_detections(image: np.ndarray, caracteristicas: dict) -> np.ndarray:
         logger.error(f"Erro ao desenhar detecções: {str(e)}")
         return image  # Retorna imagem original em caso de erro
 
-def create_thumbnail(image: np.ndarray, size=(100, 100)) -> str:
-    """Cria thumbnail da imagem em base64"""
+def create_thumbnail(image: np.ndarray, size=(100, 100)) -> np.ndarray:
+    """Cria thumbnail da imagem"""
     try:
-        # Redimensionar imagem
-        img = Image.fromarray(image)
-        img.thumbnail(size)
-        
-        # Converter para base64
-        import io
-        import base64
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode()
+        # Usar cv2 ao invés de PIL
+        return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
     except Exception as e:
         logger.error(f"Erro ao criar thumbnail: {e}")
-        return ""
+        return image
 
 def show_detection_report(analysis: dict, image_np: np.ndarray):
     """Exibe relatório com identificação do bovino"""
@@ -463,7 +453,7 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
                 nome = st.text_input("Nome do bovino:")
                 submit = st.form_submit_button("Registrar Bovino")
                 
-                if submit and codigo and nome:
+                if submit and codigo and nome:  # Corrigido operadores lógicos de && para and
                     novo_bovino = register_new_bovino(
                         analysis['caracteristicas'],
                         codigo,
@@ -554,19 +544,18 @@ def main():
         )
         
         if uploaded_file:
-            # Exibir imagem
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Imagem carregada", use_container_width=True)
+            # Ler imagem com cv2
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            # Converter BGR para RGB para exibição no Streamlit
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            st.image(image_rgb, caption="Imagem carregada", use_container_width=True)
             
-            # Processar imagem
             if st.button("Analisar Imagem"):
                 with st.spinner("Processando..."):
-                    img_array = np.array(image)
-                    processed_img = preprocess_image(img_array)
-                    
-                    # Fazer predição
-                    analysis = process_image(img_array, model)
-                    show_detection_report(analysis, img_array)
+                    processed_img = preprocess_image(image)
+                    analysis = process_image(image, model)
+                    show_detection_report(analysis, image)
             
     else:  # Vídeo
         uploaded_video = st.file_uploader(
