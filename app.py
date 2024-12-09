@@ -762,3 +762,250 @@ def main():
 
 if __name__ == "__main__":
     main()
+# Configurações do banco de dados
+class DatabaseManager:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.init_db()
+
+    def init_db(self):
+        """Inicializa o banco de dados"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS deteccoes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        codigo TEXT NOT NULL,
+                        nome TEXT,
+                        caracteristicas TEXT,
+                        confianca FLOAT,
+                        imagem_path TEXT,
+                        data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        ultima_deteccao DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                conn.commit()
+                logger.info("Banco de dados inicializado com sucesso")
+        except sqlite3.Error as e:
+            logger.error(f"Erro ao inicializar banco: {e}")
+            raise
+
+    def salvar_deteccao(self, deteccao: dict) -> bool:
+        """Salva uma nova detecção no banco"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO deteccoes 
+                    (codigo, nome, caracteristicas, confianca, imagem_path)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    deteccao['codigo'],
+                    deteccao['nome'],
+                    str(deteccao['caracteristicas']),
+                    deteccao['confianca'],
+                    deteccao['imagem_path']
+                ))
+                conn.commit()
+                logger.info(f"Detecção salva para bovino {deteccao['codigo']}")
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Erro ao salvar detecção: {e}")
+            return False
+
+    def buscar_bovino(self, codigo: str) -> Optional[dict]:
+        """Busca bovino por código"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
+                c.execute('SELECT * FROM deteccoes WHERE codigo = ?', (codigo,))
+                result = c.fetchone()
+                if result:
+                    return {
+                        'id': result[0],
+                        'codigo': result[1],
+                        'nome': result[2],
+                        'caracteristicas': eval(result[3]),
+                        'confianca': result[4],
+                        'imagem_path': result[5]
+                    }
+                return None
+        except sqlite3.Error as e:
+            logger.error(f"Erro ao buscar bovino: {e}")
+            return None
+
+# Função para salvar imagem
+def salvar_imagem(image: np.ndarray, codigo: str) -> str:
+    """Salva imagem do bovino"""
+    try:
+        # Criar diretório se não existir
+        os.makedirs('images', exist_ok=True)
+        
+        # Gerar nome do arquivo
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bovino_{codigo}_{timestamp}.jpg"
+        filepath = os.path.join('images', filename)
+        
+        # Salvar imagem
+        cv2.imwrite(filepath, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        logger.info(f"Imagem salva: {filepath}")
+        return filepath
+    except Exception as e:
+        logger.error(f"Erro ao salvar imagem: {e}")
+        return ""
+
+# Inicializar banco de dados
+db = DatabaseManager('bovinos.db')
+
+def registrar_bovino(image: np.ndarray, caracteristicas: dict) -> bool:
+    """Registra novo bovino"""
+    with st.form("registro_bovino"):
+        codigo = st.text_input("Código do Bovino:")
+        nome = st.text_input("Nome do Bovino:")
+        
+        if st.form_submit_button("Registrar"):
+            # Salvar imagem
+            imagem_path = salvar_imagem(image, codigo)
+            if not imagem_path:
+                st.error("Erro ao salvar imagem")
+                return False
+                
+            # Registrar no banco
+            deteccao = {
+                'codigo': codigo,
+                'nome': nome,
+                'caracteristicas': caracteristicas,
+                'confianca': caracteristicas.get('confianca', 0.0),
+                'imagem_path': imagem_path
+            }
+            
+            if db.salvar_deteccao(deteccao):
+                st.success(f"Bovino {codigo} registrado com sucesso!")
+                return True
+            else:
+                st.error("Erro ao registrar bovino")
+                return False                # Configurações do banco de dados
+                class DatabaseManager:
+                    def __init__(self, db_path: str):
+                        self.db_path = db_path
+                        self.init_db()
+                
+                    def init_db(self):
+                        """Inicializa o banco de dados"""
+                        try:
+                            with sqlite3.connect(self.db_path) as conn:
+                                c = conn.cursor()
+                                c.execute('''
+                                    CREATE TABLE IF NOT EXISTS deteccoes (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        codigo TEXT NOT NULL,
+                                        nome TEXT,
+                                        caracteristicas TEXT,
+                                        confianca FLOAT,
+                                        imagem_path TEXT,
+                                        data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                        ultima_deteccao DATETIME DEFAULT CURRENT_TIMESTAMP
+                                    )
+                                ''')
+                                conn.commit()
+                                logger.info("Banco de dados inicializado com sucesso")
+                        except sqlite3.Error as e:
+                            logger.error(f"Erro ao inicializar banco: {e}")
+                            raise
+                
+                    def salvar_deteccao(self, deteccao: dict) -> bool:
+                        """Salva uma nova detecção no banco"""
+                        try:
+                            with sqlite3.connect(self.db_path) as conn:
+                                c = conn.cursor()
+                                c.execute('''
+                                    INSERT INTO deteccoes 
+                                    (codigo, nome, caracteristicas, confianca, imagem_path)
+                                    VALUES (?, ?, ?, ?, ?)
+                                ''', (
+                                    deteccao['codigo'],
+                                    deteccao['nome'],
+                                    str(deteccao['caracteristicas']),
+                                    deteccao['confianca'],
+                                    deteccao['imagem_path']
+                                ))
+                                conn.commit()
+                                logger.info(f"Detecção salva para bovino {deteccao['codigo']}")
+                                return True
+                        except sqlite3.Error as e:
+                            logger.error(f"Erro ao salvar detecção: {e}")
+                            return False
+                
+                    def buscar_bovino(self, codigo: str) -> Optional[dict]:
+                        """Busca bovino por código"""
+                        try:
+                            with sqlite3.connect(self.db_path) as conn:
+                                c = conn.cursor()
+                                c.execute('SELECT * FROM deteccoes WHERE codigo = ?', (codigo,))
+                                result = c.fetchone()
+                                if result:
+                                    return {
+                                        'id': result[0],
+                                        'codigo': result[1],
+                                        'nome': result[2],
+                                        'caracteristicas': eval(result[3]),
+                                        'confianca': result[4],
+                                        'imagem_path': result[5]
+                                    }
+                                return None
+                        except sqlite3.Error as e:
+                            logger.error(f"Erro ao buscar bovino: {e}")
+                            return None
+                
+                # Função para salvar imagem
+                def salvar_imagem(image: np.ndarray, codigo: str) -> str:
+                    """Salva imagem do bovino"""
+                    try:
+                        # Criar diretório se não existir
+                        os.makedirs('images', exist_ok=True)
+                        
+                        # Gerar nome do arquivo
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"bovino_{codigo}_{timestamp}.jpg"
+                        filepath = os.path.join('images', filename)
+                        
+                        # Salvar imagem
+                        cv2.imwrite(filepath, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+                        logger.info(f"Imagem salva: {filepath}")
+                        return filepath
+                    except Exception as e:
+                        logger.error(f"Erro ao salvar imagem: {e}")
+                        return ""
+                
+                # Inicializar banco de dados
+                db = DatabaseManager('bovinos.db')
+                
+                def registrar_bovino(image: np.ndarray, caracteristicas: dict) -> bool:
+                    """Registra novo bovino"""
+                    with st.form("registro_bovino"):
+                        codigo = st.text_input("Código do Bovino:")
+                        nome = st.text_input("Nome do Bovino:")
+                        
+                        if st.form_submit_button("Registrar"):
+                            # Salvar imagem
+                            imagem_path = salvar_imagem(image, codigo)
+                            if not imagem_path:
+                                st.error("Erro ao salvar imagem")
+                                return False
+                                
+                            # Registrar no banco
+                            deteccao = {
+                                'codigo': codigo,
+                                'nome': nome,
+                                'caracteristicas': caracteristicas,
+                                'confianca': caracteristicas.get('confianca', 0.0),
+                                'imagem_path': imagem_path
+                            }
+                            
+                            if db.salvar_deteccao(deteccao):
+                                st.success(f"Bovino {codigo} registrado com sucesso!")
+                                return True
+                            else:
+                                st.error("Erro ao registrar bovino")
+                                return False
