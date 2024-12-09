@@ -166,8 +166,8 @@ def calculate_similarity(caract1: dict, caract2: dict) -> float:
     except:
         return 0.0
 
-def register_new_bovino(caracteristicas: dict, codigo: str, nome: str) -> Optional[dict]:
-    """Registra novo bovino"""
+def register_new_bovino(caracteristicas: dict, nome: str) -> Optional[dict]:
+    """Registra novo bovino apenas com nome"""
     try:
         conn = get_db()
         if not conn:
@@ -175,6 +175,9 @@ def register_new_bovino(caracteristicas: dict, codigo: str, nome: str) -> Option
             
         c = conn.cursor()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Gerar código automaticamente baseado no timestamp
+        codigo = f"BOV_{now.replace(' ', '').replace('-', '').replace(':', '')}"
         
         c.execute("""
             INSERT INTO bovinos 
@@ -189,8 +192,16 @@ def register_new_bovino(caracteristicas: dict, codigo: str, nome: str) -> Option
             now
         ))
         
+        bovino_id = c.lastrowid  # Pegar ID do bovino inserido
         conn.commit()
-        return {'codigo': codigo, 'nome': nome}
+        
+        # Salvar primeira detecção no histórico
+        save_detection_history(bovino_id, {
+            'score': max(v['confianca'] for v in caracteristicas.values()),
+            'caracteristicas': caracteristicas
+        })
+        
+        return {'codigo': codigo, 'nome': nome, 'id': bovino_id}
     except Exception as e:
         logger.error(f"Erro ao registrar bovino: {e}")
         st.error(f"Erro ao registrar: {e}")
@@ -481,7 +492,6 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
         if similar:
             # Bovino conhecido
             st.success("🐮 Bovino Reconhecido!")
-            st.write(f"**Código:** {similar['codigo']}")
             st.write(f"**Nome:** {similar['nome']}")
             st.write(f"**Similaridade:** {similar['similarity']:.2%}")
             
@@ -495,24 +505,22 @@ def show_detection_report(analysis: dict, image_np: np.ndarray):
         else:
             st.warning("⚠️ Novo bovino detectado!")
             
-            # Formulário para registro
-            with st.form("registro_bovino", clear_on_submit=True):
-                codigo = st.text_input("Código do bovino:")
-                nome = st.text_input("Nome do bovino:")
-                submit = st.form_submit_button("Registrar Bovino")
-                
-                if submit and codigo and nome:
+            # Formulário para registro simplificado
+            nome = st.text_input("Nome do bovino:")
+            if st.button("Registrar Bovino"):
+                if nome:
                     novo_bovino = register_new_bovino(
                         analysis['caracteristicas'],
-                        codigo,
                         nome
                     )
                     if novo_bovino:
                         st.success(f"✅ Bovino {novo_bovino['nome']} registrado!")
-                        # Recarregar página para mostrar histórico
-                        st.experimental_rerun()
+                        # Mostrar histórico do novo bovino
+                        show_bovino_history(novo_bovino['id'])
                     else:
                         st.error("❌ Erro ao registrar bovino")
+                else:
+                    st.error("Por favor, informe o nome do bovino")
 
 def show_bovino_history(bovino_id: int):
     """Mostra histórico de detecções do bovino"""
