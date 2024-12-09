@@ -570,6 +570,100 @@ def show_bovino_history(bovino_id: int):
         if conn:
             conn.close()
 
+if 'bovinos' not in st.session_state:
+    st.session_state.bovinos = []
+
+def register_new_bovino(nome: str, deteccao: dict) -> None:
+    """Registra novo bovino na sessão"""
+    novo_bovino = {
+        'id': len(st.session_state.bovinos) + 1,
+        'nome': nome,
+        'confianca': deteccao['confianca'],
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'deteccoes': 1
+    }
+    st.session_state.bovinos.append(novo_bovino)
+    return novo_bovino
+
+def update_bovino_detection(bovino_id: int) -> None:
+    """Atualiza contagem de detecções do bovino"""
+    for bovino in st.session_state.bovinos:
+        if bovino['id'] == bovino_id:
+            bovino['deteccoes'] += 1
+            bovino['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+
+def show_detection_report(analysis: dict, image_np: np.ndarray):
+    """Exibe relatório com identificação e tabela de bovinos"""
+    if not analysis.get('deteccoes'):
+        st.error("Nenhum bovino detectado na imagem")
+        return
+
+    # Mostrar imagem processada
+    if 'imagem_processada' in analysis:
+        st.image(
+            analysis['imagem_processada'],
+            caption=f"Detecções ({analysis['total_deteccoes']} bovinos)",
+            use_container_width=True
+        )
+
+    # Para cada bovino detectado
+    for i, deteccao in enumerate(analysis['deteccoes']):
+        with st.expander(f"Bovino #{i+1} - Confiança: {deteccao['confianca']}", expanded=True):
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.metric("Confiança", deteccao['confianca'])
+                st.metric("Status", deteccao['status'])
+                nome = st.text_input(f"Nome do bovino #{i+1}:", key=f"nome_bovino_{i}")
+                
+                if st.button(f"Registrar/Atualizar", key=f"btn_registro_{i}"):
+                    if nome:
+                        # Procurar bovino existente com mesmo nome
+                        bovino_existente = next(
+                            (b for b in st.session_state.bovinos if b['nome'].lower() == nome.lower()),
+                            None
+                        )
+                        
+                        if bovino_existente:
+                            update_bovino_detection(bovino_existente['id'])
+                            st.success(f"✅ Bovino {nome} atualizado!")
+                        else:
+                            novo_bovino = register_new_bovino(nome, deteccao)
+                            st.success(f"✅ Bovino {nome} registrado!")
+                    else:
+                        st.error("Por favor, informe o nome do bovino")
+            
+            with col2:
+                st.write("### Bovinos Registrados")
+                if st.session_state.bovinos:
+                    df = pd.DataFrame(st.session_state.bovinos)
+                    st.dataframe(
+                        df,
+                        column_config={
+                            "id": "ID",
+                            "nome": "Nome",
+                            "confianca": st.column_config.ProgressColumn(
+                                "Confiança",
+                                format="%.2f%%",
+                                min_value=0,
+                                max_value=100
+                            ),
+                            "timestamp": st.column_config.DatetimeColumn(
+                                "Última Detecção",
+                                format="DD/MM/YYYY HH:mm"
+                            ),
+                            "deteccoes": st.column_config.NumberColumn(
+                                "Total Detecções",
+                                format="%d"
+                            )
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Nenhum bovino registrado ainda")
+
 def main():
     st.title(APP_CONFIG["title"])
     
