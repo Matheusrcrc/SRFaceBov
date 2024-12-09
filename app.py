@@ -18,9 +18,14 @@ from typing import Optional, Any
 try:
     import cv2
 except ImportError:
-    print("Erro ao importar cv2, tentando opencv-python-headless...")
-    os.system('pip install opencv-python-headless')
-    import cv2
+    print("Erro ao importar cv2, tentando opencv-python...")
+    os.system('pip install opencv-python')
+    try:
+        import cv2
+    except ImportError:
+        print("Erro ao importar cv2, tentando opencv-python-headless...")
+        os.system('pip install opencv-python-headless')
+        import cv2
 
 # Third-party imports
 import numpy as np

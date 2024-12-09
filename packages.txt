@@ -1,8 +1,10 @@
 build-essential
 python3-dev
-python-opencv
 libgl1-mesa-glx
 libglib2.0-0
 libxext6
 libsm6
 libxrender1
+libjpeg-dev
+zlib1g-dev
+libxcb1-dev
