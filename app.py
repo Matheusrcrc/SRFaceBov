@@ -253,45 +253,52 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     return image
 
 def process_image(image: np.ndarray, model: YOLO) -> dict:
-    """Processa imagem com YOLO"""
+    """Processa imagem com YOLO e retorna múltiplas detecções"""
     try:
-        # Configurar parâmetros YOLO e fazer predição
         results = model.predict(
             source=image,
             conf=0.25,
             show=False
         )
         
-        # Processar resultados
+        # Processar resultados para múltiplas detecções
         detections = []
         if len(results) > 0 and hasattr(results[0], 'boxes'):
-            for box in results[0].boxes:
+            for i, box in enumerate(results[0].boxes):
                 box_data = box.data[0]
                 detection = {
+                    'id': f"detect_{i}",  # ID única para cada detecção
                     'bbox': box_data[:4].tolist(),
                     'confianca': float(box_data[4]),
                     'classe': results[0].names[int(box_data[5])]
                 }
                 detections.append(detection)
 
-        # Preparar análise
+        # Preparar análise com detecções múltiplas
         analysis = {
-            'score': max([d['confianca'] for d in detections], default=0.0),
-            'confianca': f"{max([d['confianca'] for d in detections], default=0.0):.2%}",
-            'status': 'Positivo' if detections else 'Negativo',
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'dimensoes': image.shape,
             'qualidade': 'Alta' if min(image.shape[:2]) >= 640 else 'Média',
-            'caracteristicas': {
-                f"deteccao_{i}": {
-                    'confianca': d['confianca'],
-                    'descricao': f"Detectado {d['classe']}"
+            'total_deteccoes': len(detections),
+            'deteccoes': [
+                {
+                    'id': d['id'],
+                    'score': d['confianca'],
+                    'confianca': f"{d['confianca']:.2%}",
+                    'status': 'Positivo' if d['confianca'] > 0.25 else 'Negativo',
+                    'caracteristicas': {
+                        'deteccao_principal': {
+                            'confianca': d['confianca'],
+                            'descricao': f"Detectado {d['classe']}"
+                        }
+                    },
+                    'bbox': d['bbox']
                 }
-                for i, d in enumerate(detections)
-            }
+                for d in detections
+            ]
         }
         
-        # Adicionar imagem processada
+        # Adicionar imagem processada com todas as detecções
         if len(results) > 0:
             analysis['imagem_processada'] = results[0].plot()
         
@@ -464,63 +471,61 @@ def save_detection_history(bovino_id: int, analysis: dict) -> bool:
             conn.close()
 
 def show_detection_report(analysis: dict, image_np: np.ndarray):
-    """Exibe relatório com identificação do bovino"""
-    if 'caracteristicas' not in analysis:
-        st.error("Nenhuma característica detectada na imagem")
+    """Exibe relatório com identificação de múltiplos bovinos"""
+    if not analysis.get('deteccoes'):
+        st.error("Nenhum bovino detectado na imagem")
         return
 
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Mostrar imagem processada
-        if 'imagem_processada' in analysis:
-            st.image(
-                analysis['imagem_processada'],
-                caption="Detecções",
-                use_container_width=True
-            )
-    
-    with col2:
-        # Métricas principais
-        st.metric("Confiança", analysis['confianca'])
-        st.metric("Status", analysis['status'])
-        st.metric("Qualidade", analysis['qualidade'])
-        
-        # Buscar bovino similar
-        similar = find_similar_bovino(analysis['caracteristicas'])
-        
-        if similar:
-            # Bovino conhecido
-            st.success("🐮 Bovino Reconhecido!")
-            st.write(f"**Nome:** {similar['nome']}")
-            st.write(f"**Similaridade:** {similar['similarity']:.2%}")
+    # Mostrar imagem com todas as detecções
+    if 'imagem_processada' in analysis:
+        st.image(
+            analysis['imagem_processada'],
+            caption=f"Detecções ({analysis['total_deteccoes']} bovinos)",
+            use_container_width=True
+        )
+
+    # Para cada bovino detectado
+    for i, deteccao in enumerate(analysis['deteccoes']):
+        with st.expander(f"Bovino #{i+1} - Confiança: {deteccao['confianca']}", expanded=True):
+            col1, col2 = st.columns([1, 1])
             
-            # Atualizar registros e salvar histórico
-            if update_bovino_detection(similar['id']):
-                save_detection_history(similar['id'], analysis)
-                st.info("✅ Registro atualizado com sucesso!")
+            with col1:
+                # Métricas do bovino atual
+                st.metric("Confiança", deteccao['confianca'])
+                st.metric("Status", deteccao['status'])
+                st.metric("Qualidade", analysis['qualidade'])
+            
+            with col2:
+                # Buscar bovino similar
+                similar = find_similar_bovino(deteccao['caracteristicas'])
                 
-            # Mostrar histórico
-            show_bovino_history(similar['id'])
-        else:
-            st.warning("⚠️ Novo bovino detectado!")
-            
-            # Formulário para registro simplificado
-            nome = st.text_input("Nome do bovino:")
-            if st.button("Registrar Bovino"):
-                if nome:
-                    novo_bovino = register_new_bovino(
-                        analysis['caracteristicas'],
-                        nome
-                    )
-                    if novo_bovino:
-                        st.success(f"✅ Bovino {novo_bovino['nome']} registrado!")
-                        # Mostrar histórico do novo bovino
-                        show_bovino_history(novo_bovino['id'])
-                    else:
-                        st.error("❌ Erro ao registrar bovino")
+                if similar:
+                    # Bovino conhecido
+                    st.success("🐮 Bovino Reconhecido!")
+                    st.write(f"**Nome:** {similar['nome']}")
+                    st.write(f"**Similaridade:** {similar['similarity']:.2%}")
+                    
+                    # Atualizar registros
+                    if update_bovino_detection(similar['id']):
+                        save_detection_history(similar['id'], deteccao)
+                        st.info("✅ Registro atualizado com sucesso!")
+                        show_bovino_history(similar['id'])
                 else:
-                    st.error("Por favor, informe o nome do bovino")
+                    st.warning("⚠️ Novo bovino detectado!")
+                    nome = st.text_input(f"Nome do bovino #{i+1}:", key=f"nome_bovino_{i}")
+                    if st.button(f"Registrar Bovino #{i+1}", key=f"btn_registro_{i}"):
+                        if nome:
+                            novo_bovino = register_new_bovino(
+                                deteccao['caracteristicas'],
+                                nome
+                            )
+                            if novo_bovino:
+                                st.success(f"✅ Bovino {novo_bovino['nome']} registrado!")
+                                show_bovino_history(novo_bovino['id'])
+                            else:
+                                st.error("❌ Erro ao registrar bovino")
+                        else:
+                            st.error("Por favor, informe o nome do bovino")
 
 def show_bovino_history(bovino_id: int):
     """Mostra histórico de detecções do bovino"""
